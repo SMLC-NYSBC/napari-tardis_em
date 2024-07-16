@@ -1,0 +1,97 @@
+#######################################################################
+#  TARDIS - Transformer And Rapid Dimensionless Instance Segmentation #
+#                                                                     #
+#  New York Structural Biology Center                                 #
+#  Simons Machine Learning Center                                     #
+#                                                                     #
+#  Robert Kiewisz, Tristan Bepler                                     #
+#  MIT License 2024                                                   #
+#######################################################################
+name: napari-tardis-em
+display_name: TARDIS-em napari plugin
+contributions:
+  commands:
+    # Read/Write files Images
+#    - id: napari-tardis_em.import_data
+#      python_name: napari-tardis_em.utils.import_data:load_images
+#      title: Open micrograph|tomogram
+#
+#    - id: napari-tardis_em.export_image
+#      python_name: napari-tardis_em.utils.export_data:export_images
+#      title: Save micrograph|tomogram
+#
+#    - id: napari-tardis_em.export_coord
+#      python_name: napari-tardis_em.utils.export_coord:export_coord
+#      title: Save instance segmentation
+
+    # Widgets
+    # General
+    - id: napari-tardis-em.viewer_train
+      python_name: napari_tardis_em.viewers.viewer_train:TardisWidget
+      title: Train TARDIS CNN
+
+    - id: napari-tardis-em.viewer_predict
+      python_name: napari_tardis_em.viewers.viewer_predict:TardisWidget
+      title: Predict TARDIS CNN
+
+    # Microtubules
+    - id: napari-tardis-em.viewer_mt_3d
+      python_name: napari_tardis_em.viewers.viewer_mt_3d:TardisWidget
+      title: Predict Microtubules 3D
+
+#    - id: napari-tardis-em.viewer_mt_2d
+#      python_name: napari_tardis_em.viewers.viewer_mt_3d:TardisWidget
+#      title: Predict Microtubules 2D
+
+    # Membrane
+    - id: napari-tardis-em.viewer_mem_3d
+      python_name: napari_tardis_em.viewers.viewer_mem_3d:TardisWidget
+      title: Predict Membrane 3D
+
+    - id: napari-tardis-em.viewer_mem_2d
+      python_name: napari_tardis_em.viewers.viewer_mt_2d:TardisWidget
+      title: Predict Microtubules 2D
+
+#    # Actin
+    - id: napari-tardis-em.viewer_actin_3d
+      python_name: napari_tardis_em.viewers.viewer_actin_3d:TardisWidget
+      title: Predict Actin 3D
+
+#  readers:
+#    - command: napari_tardis_em.import_data
+#      accepts_directories: False
+#      filename_patterns: ['*.mrc', '*.rec', '*.tiff', '*.tif', '*.am']
+
+#  writers:
+#    - command: napari_tardis_em.export_image
+#      layer_types: ['image*']
+#      filename_extensions: ['*.mrc', '*.rec', '*.tiff', '*.tif', '*.am']
+#    - command: napari_tardis_em.export_coord
+#      layer_types: ['points*']
+#      filename_extensions: ['*.csv', '*.npy', '*.am']
+
+  widgets:
+    # General
+    - command: napari-tardis-em.viewer_train
+      display_name: Train TARDIS CNN
+
+    - command: napari-tardis-em.viewer_predict
+      display_name: Predict TARDIS CNN
+
+    # Microtubules
+    - command: napari-tardis-em.viewer_mt_3d
+      display_name: Predict Microtubules 3D
+
+#    - command: napari-tardis-em.viewer_mt_2d
+#      display_name: Predict Microtubules 2D
+
+    # Membrane
+    - command: napari-tardis-em.viewer_mem_3d
+      display_name: Predict Membrane 3D
+
+    - command: napari-tardis-em.viewer_mem_2d
+      display_name: Predict Membrane 2D
+
+#    # Actin
+    - command: napari-tardis-em.viewer_actin_3d
+      display_name: Predict Actin 3D
