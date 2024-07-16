@@ -1,2 +1,1 @@
-# Versioning mirror TARDIS-em version
-from tardis_em._version import version
+version = "0.1.0"
