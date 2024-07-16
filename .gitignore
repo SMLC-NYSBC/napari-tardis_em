@@ -1,0 +1,12 @@
+
+*.pyc
+*.DS_Store
+src/napari_tardis_em.egg-info/top_level.txt
+src/napari_tardis_em.egg-info/SOURCES.txt
+src/napari_tardis_em.egg-info/requires.txt
+src/napari_tardis_em.egg-info/PKG-INFO
+src/napari_tardis_em.egg-info/entry_points.txt
+src/napari_tardis_em.egg-info/dependency_links.txt
+*.xml
+*.iml
+.idea/
