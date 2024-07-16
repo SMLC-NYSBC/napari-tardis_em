@@ -1,2 +1,2 @@
-# Versioning bound to TARDIS-em versioning
-version = "0.0.1"
+# Versioning mirror TARDIS-em version
+from tardis_em._version import version
