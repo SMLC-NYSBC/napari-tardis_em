@@ -71,6 +71,9 @@ class TardisWidget(QWidget):
 
         self.out_, self.output_folder = None, None
 
+        self.dir = os.getcwd()
+        self.output_folder = f"{os.getcwd()}/{self.cnn_type.currentText()}_checkpoints/"
+
         """""" """""" """
           UI Elements
         """ """""" """"""
@@ -274,9 +277,7 @@ class TardisWidget(QWidget):
 
         self.stop_button = QPushButton("Stop Training")
         self.stop_button.setMinimumWidth(225)
-        # self.train_button.clicked.connect(self.trainer_loop.worker.quite)
 
-        self.load_directory()
         """""" """""" """
            UI Setup
         """ """""" """"""
@@ -584,7 +585,7 @@ class TardisWidget(QWidget):
 
             # Run Epoch loop
             for id_ in range(int(self.epoch.text())):
-                print(id_, int(self.epoch.text()))
+                show_info(f"Training progress: {id_}/{int(self.epoch.text())}")
                 self.id_ = id_
 
                 # ToDo build validation set to display (random <=25 data)
@@ -662,7 +663,6 @@ class TardisWidget(QWidget):
     def show_validation(self, init_=False):
         """
         Receive output from the validation loop prediction and display it.
-        Expect list of 25 elements.
 
         Returns:
             napari.Viewer.addImage

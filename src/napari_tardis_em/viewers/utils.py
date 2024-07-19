@@ -88,6 +88,8 @@ def create_point_layer(
         features=point_features,
         face_color="confidence",
         face_colormap=face_colormap,
+        visible=visibility,
+        size=35,
     )
 
 

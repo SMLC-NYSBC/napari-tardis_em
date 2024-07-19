@@ -38,10 +38,11 @@ from tardis_em.utils.aws import get_all_version_aws
 from tardis_em.utils.load_data import load_image
 from tardis_em.utils.normalization import adaptive_threshold
 from tardis_em.utils.predictor import GeneralPredictor
+from tardis_em.utils.setup_envir import clean_up
 
-from napari_tardis_em.utils.styles import border_style
+from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
-from napari_tardis_em.viewers.utils import create_image_layer, update_viewer_prediction
+from napari_tardis_em.viewers.utils import create_image_layer, update_viewer_prediction, create_point_layer
 
 
 class TardisWidget(QWidget):
@@ -467,45 +468,58 @@ class TardisWidget(QWidget):
             self.predictor.image = None
             self.scale_shape = self.predictor.scale_shape
 
-        img_dataset = PredictionDataset(
-            join(self.predictor.dir, "temp", "Patches", "imgs")
-        )
+            img_dataset = PredictionDataset(
+                join(self.predictor.dir, "temp", "Patches", "imgs")
+            )
 
-        @thread_worker(
-            start_thread=False,
-            progress={"desc": "semantic-segmentation-progress"},
-            connect={"finished": self.update_cnn_threshold},
-        )
-        def predict_dataset(img_dataset_, predictor):
-            for j in range(len(img_dataset_)):
-                input_, name = img_dataset_.__getitem__(j)
+            @thread_worker(
+                start_thread=False,
+                progress={"desc": "semantic-segmentation-progress"},
+                connect={"finished": self.update_cnn_threshold},
+            )
+            def predict_dataset(img_dataset_, predictor):
+                for j in range(len(img_dataset_)):
+                    input_, name = img_dataset_.__getitem__(j)
 
-                input_ = predictor.predict_cnn_napari(input_, name)
-                update_viewer_prediction(
-                    self.viewer, input_, self.calculate_position(name)
-                )
+                    input_ = predictor.predict_cnn_napari(input_, name)
+                    update_viewer_prediction(
+                        self.viewer, input_, self.calculate_position(name)
+                    )
 
-            show_info("Finished Semantic Prediction !")
+                show_info("Finished Semantic Prediction !")
 
-            self.img = self.predictor.image_stitcher(
-                image_dir=self.predictor.output, mask=False, dtype=np.float32
-            )[
-                : self.predictor.scale_shape[0],
-                : self.predictor.scale_shape[1],
-                : self.predictor.scale_shape[2],
-            ]
-            self.img, _ = scale_image(image=self.img, scale=self.predictor.org_shape)
-            self.img = torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
-            self.predictor.image = self.img
+                self.img = self.predictor.image_stitcher(
+                    image_dir=self.predictor.output, mask=False, dtype=np.float32
+                )[
+                    : self.predictor.scale_shape[0],
+                    : self.predictor.scale_shape[1],
+                    : self.predictor.scale_shape[2],
+                ]
+                self.img, _ = scale_image(image=self.img, scale=self.predictor.org_shape)
+                self.img = torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
+                self.predictor.image = self.img
 
-        worker = predict_dataset(img_dataset, self.predictor)
-        worker.start()
+            worker = predict_dataset(img_dataset, self.predictor)
+            worker.start()
+        else:
+            return
 
     def update_dist_layer(self):
-        print("tests")
-        pass
+        if self.predictor.segments is not None:
+            create_point_layer(
+                viewer=self.viewer,
+                points=self.predictor.segments,
+                name='Predicted_Instances',
+                visibility=True,
+            )
+        else:
+            return
 
     def predict_instance(self):
+        if self.predictor is None:
+            show_error(f"Please initialize with 'Predict Semantic' button")
+            return
+
         self.output_formats = (
             f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
         )
@@ -517,7 +531,7 @@ class TardisWidget(QWidget):
 
             self.segments = np.zeros((0, 4))
 
-            if not self.img_threshold.min() == 0 and not self.img_threshold.max() == 1:
+            if not self.predictor.image.min() == 0 and not self.predictor.image.max() == 1:
                 show_error("You need to first select CNN threshold greater then 0.0")
                 return
 
@@ -530,7 +544,6 @@ class TardisWidget(QWidget):
                 show_info("Started Instance Prediction !")
 
                 self.predictor.preprocess_DIST(self.dir.split("/")[-1])
-                show_info(f"{len(self.predictor.pc_ld)}")
                 if len(self.predictor.pc_ld) > 0:
                     # Build patches dataset
                     (
@@ -546,15 +559,16 @@ class TardisWidget(QWidget):
                         id_=0, id_name=self.dir.split("/")[-1]
                     )
                     self.predictor.postprocess_DIST(
-                        id_=0, id_name=self.dir.split("/")[-1]
+                        id_=0, i=self.dir.split("/")[-1]
                     )
 
                     if self.predictor.segments is None:
                         show_info("TARDIS-em could not find any instances :(")
                         return
-
-                    self.predictor.save_instance_PC(self.dir.split("/")[-1])
-                    self.predictor.clean_up(dir_=self.dir)
+                    else:
+                        show_info(f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)")
+                        self.predictor.save_instance_PC(self.dir.split("/")[-1])
+                        clean_up(dir_=self.dir)
                     show_info("Finished Instance Prediction !")
 
             worker = predict_dist()
