@@ -7,73 +7,120 @@
 #  Robert Kiewisz, Tristan Bepler                                     #
 #  MIT License 2024                                                   #
 #######################################################################
+from os import mkdir, listdir
+from os.path import join, isdir
+from shutil import rmtree
+
 import numpy as np
 
-from napari_tardis_em.viewers import colormap_for_display
+from napari_tardis_em.viewers import colormap_for_display, face_colormap, IMG_FORMAT
+
+from tardis_em.utils.dataset import build_test_dataset
+from tardis_em.cnn.datasets.build_dataset import build_train_dataset
+from tardis_em.utils.setup_envir import check_dir
+from tardis_em.utils.errors import TardisError
 
 
-def update_viewer_prediction(
-        viewer,
-        image: np.ndarray,
-        position: dict):
-    img = viewer.layers['Prediction']
+def update_viewer_prediction(viewer, image: np.ndarray, position: dict):
+    img = viewer.layers["Prediction"]
 
     try:
         img.data[
-        position['z'][0]:position['z'][1],
-        position['y'][0]:position['y'][1],
-        position['x'][0]:position['x'][1],
+            position["z"][0] : position["z"][1],
+            position["y"][0] : position["y"][1],
+            position["x"][0] : position["x"][1],
         ] = image
     except ValueError:
         shape_ = img.data.shape
         diff = [
-            image.shape[0] - (position['z'][1] - shape_[0]),
-            image.shape[0] - (position['y'][1] - shape_[1]),
-            image.shape[0] - (position['x'][1] - shape_[2])
+            image.shape[0] - (position["z"][1] - shape_[0]),
+            image.shape[0] - (position["y"][1] - shape_[1]),
+            image.shape[0] - (position["x"][1] - shape_[2]),
         ]
         diff = [
             diff[0] if 0 < diff[0] < image.shape[0] else image.shape[0],
             diff[1] if 0 < diff[1] < image.shape[0] else image.shape[0],
             diff[2] if 0 < diff[2] < image.shape[0] else image.shape[0],
         ]
-        position['z'][1] = position['z'][0] + diff[0]
-        position['y'][1] = position['y'][0] + diff[1]
-        position['x'][1] = position['x'][0] + diff[2]
+        position["z"][1] = position["z"][0] + diff[0]
+        position["y"][1] = position["y"][0] + diff[1]
+        position["x"][1] = position["x"][0] + diff[2]
 
         img.data[
-        position['z'][0]:position['z'][1],
-        position['y'][0]:position['y'][1],
-        position['x'][0]:position['x'][1],
-        ] = image[:diff[0], :diff[1], :diff[2]]
+            position["z"][0] : position["z"][1],
+            position["y"][0] : position["y"][1],
+            position["x"][0] : position["x"][1],
+        ] = image[: diff[0], : diff[1], : diff[2]]
 
 
-def create_image_layer(
-        viewer,
-        image: np.ndarray,
-        name: str,
-        transparency=False,
-        visibility=True,
-        range_=None,
+def create_point_layer(
+    viewer,
+    points: np.ndarray,
+    name: str,
+    visibility=True,
 ):
     """
-    Create an image layer in napari.
+    Create a point layer in napari.
 
     Args:
-        image (np.ndarray): Image array to display
+        viewer (napari.Viewer): Napari viewer
+        points (np.ndarray): Image array to display
         name (str): Layer name
-        transparency (bool): If True, show image as transparent layer
         visibility (bool):
-        range_(tuple):
     """
     try:
         viewer.layers.remove(name)
     except Exception as e:
         pass
 
+    point_features = {
+        "confidence": tuple(points[:, 0].flatten()),
+    }
+    points = np.array(points[:, 1:])
+
+    # Assert points in 3D
+    if points.shape[1] == 2:
+        z = np.zeros((len(points), 1))
+        points = np.hstack((z, points))
+
+    viewer.add_points(
+        points,
+        features=point_features,
+        face_color="confidence",
+        face_colormap=face_colormap,
+    )
+
+
+def create_image_layer(
+    viewer,
+    image=None,
+    name="Prediction",
+    transparency=True,
+    visibility=True,
+    range_: None = (0, 1),
+):
+    """
+    Create an image layer in napari.
+
+    Args:
+        viewer (napari.Viewer): Napari viewer
+        image (np.ndarray): Image array to display
+        name (str): Layer name
+        transparency (bool): If True, show image as transparent layer
+        visibility (bool):
+        range_(None, tuple):
+    """
+    if isinstance(viewer, tuple) or isinstance(viewer, list):
+        image = viewer[1]
+        viewer = viewer[0]
+
+    try:
+        viewer.layers.remove(name)
+    except Exception as e:
+        pass
+
     if transparency:
-        viewer.add_image(
-            image, name=name, colormap=colormap_for_display, opacity=0.5
-        )
+        viewer.add_image(image, name=name, colormap=colormap_for_display, opacity=0.5)
     else:
         viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
 
@@ -99,3 +146,60 @@ def create_image_layer(
         viewer.layers[name].visible = True
     else:
         viewer.layers[name].visible = False
+
+
+def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size):
+    """Set environment"""
+    TRAIN_IMAGE_DIR = join(dir_, "train", "imgs")
+    TRAIN_MASK_DIR = join(dir_, "train", "masks")
+    TEST_IMAGE_DIR = join(dir_, "test", "imgs")
+    TEST_MASK_DIR = join(dir_, "test", "masks")
+
+    DATASET_TEST = check_dir(
+        dir_=dir_,
+        with_img=True,
+        train_img=TRAIN_IMAGE_DIR,
+        train_mask=TRAIN_MASK_DIR,
+        img_format=(".mrc", ".tif"),
+        test_img=TEST_IMAGE_DIR,
+        test_mask=TEST_MASK_DIR,
+        mask_format=("_mask.mrc", "_mask.tif"),
+    )
+
+    """Optionally: Set-up environment if not existing"""
+    if not DATASET_TEST:
+        # Check and set-up environment
+        if not len([f for f in listdir(dir_) if f.endswith(IMG_FORMAT)]) > 0:
+            TardisError(
+                "100",
+                "tardis_em/train_cnn.py",
+                "Indicated folder for training do not have any compatible "
+                "data or one of the following folders: "
+                "test/imgs; test/masks; train/imgs; train/masks",
+            )
+
+        if isdir(join(dir_, "train")):
+            rmtree(join(dir_, "train"))
+
+        mkdir(join(dir_, "train"))
+        mkdir(TRAIN_IMAGE_DIR)
+        mkdir(TRAIN_MASK_DIR)
+
+        if isdir(join(dir_, "test")):
+            rmtree(join(dir_, "test"))
+
+        mkdir(join(dir_, "test"))
+        mkdir(TEST_IMAGE_DIR)
+        mkdir(TEST_MASK_DIR)
+
+        # Build train and test dataset
+        build_train_dataset(
+            dataset_dir=dir_,
+            circle_size=mask_size,
+            resize_pixel_size=pixel_size,
+            trim_xy=patch_size,
+            trim_z=patch_size,
+        )
+
+        no_dataset = int(len([f for f in listdir(dir_) if f.endswith(IMG_FORMAT)]) / 2)
+        build_test_dataset(dataset_dir=dir_, dataset_no=no_dataset)

@@ -10,7 +10,7 @@
 import os
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIntValidator, QDoubleValidator
+from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
     QPushButton,
     QFormLayout,
@@ -20,7 +20,6 @@ from PyQt5.QtWidgets import (
     QCheckBox,
 )
 from napari import Viewer
-
 from qtpy.QtWidgets import QWidget
 
 from napari_tardis_em.utils.styles import border_style

@@ -13,6 +13,7 @@ from os.path import join
 import numpy as np
 import torch
 
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
 from PyQt5.QtWidgets import (
     QPushButton,
@@ -24,22 +25,20 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
 )
-from napari import Viewer
-from napari.utils.progress import progress
-from napari.qt.threading import thread_worker
-
 from qtpy.QtWidgets import QWidget
-from PyQt5.QtCore import Qt
 
-from tardis_em.utils.predictor import GeneralPredictor
-from tardis_em.utils.load_data import load_image
-from tardis_em.cnn.data_processing.trim import trim_with_stride
-from tardis_em.utils.aws import get_all_version_aws
-from tardis_em.cnn.datasets.dataloader import PredictionDataset
-from tardis_em.cnn.data_processing.scaling import scale_image
-from tardis_em.utils.normalization import adaptive_threshold
-
+from napari import Viewer
+from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info, show_error
+
+from tardis_em.cnn.data_processing.scaling import scale_image
+from tardis_em.cnn.data_processing.trim import trim_with_stride
+from tardis_em.cnn.datasets.dataloader import PredictionDataset
+from tardis_em.utils.aws import get_all_version_aws
+from tardis_em.utils.load_data import load_image
+from tardis_em.utils.normalization import adaptive_threshold
+from tardis_em.utils.predictor import GeneralPredictor
+
 from napari_tardis_em.utils.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import create_image_layer, update_viewer_prediction
@@ -58,6 +57,9 @@ class TardisWidget(QWidget):
         super().__init__()
 
         self.viewer = viewer_mt_3d
+
+        self.predictor = None
+        self.img_threshold, self.scale_shape = None, None
 
         self.img, self.px = None, None
         self.out_ = getcwd()
@@ -79,6 +81,7 @@ class TardisWidget(QWidget):
         self.output.setToolTip(
             "Select directory in which plugin will save train model, checkpoints and training logs."
         )
+        self.output.clicked.connect(self.load_output)
         self.output_folder = f"...{getcwd()[-17:]}/Predictions/"
 
         ##############################
@@ -95,7 +98,9 @@ class TardisWidget(QWidget):
         self.output_instance.addItems(["None", "csv", "npy", "amSG"])
         self.output_instance.setToolTip("Select instance output format file.")
 
-        self.output_formats = f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
+        self.output_formats = (
+            f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
+        )
 
         ###########################
         # Setting user may change #
@@ -208,9 +213,11 @@ class TardisWidget(QWidget):
         self.predict_2_button.setMinimumWidth(225)
         self.predict_2_button.clicked.connect(self.predict_instance)
 
+        self.stop_button = QPushButton("Stop Prediction")
+        self.stop_button.setMinimumWidth(225)
+
         self.export_command = QPushButton("Export command for high-throughput")
         self.export_command.setMinimumWidth(225)
-        self.export_command.clicked.connect(self.show_command)
 
         #################################
         # Optional Microtubules Filters #
@@ -320,7 +327,7 @@ class TardisWidget(QWidget):
         filename, _ = QFileDialog.getOpenFileName(
             caption="Open File",
             directory=getcwd(),
-            filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
+            # filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
         )
 
         out_ = [
@@ -338,7 +345,7 @@ class TardisWidget(QWidget):
 
         self.img, self.px = load_image(self.dir)
 
-        if self.correct_px.text() == 'None' and self.px >= 0.0 or self.px != 1.0:
+        if self.correct_px.text() == "None" and self.px >= 0.0 or self.px != 1.0:
             self.correct_px.setText(f"{self.px}")
 
         create_image_layer(
@@ -346,7 +353,17 @@ class TardisWidget(QWidget):
             image=self.img,
             name=self.dir.split("/")[-1],
             range_=(np.min(self.img), np.max(self.img)),
+            transparency=False,
         )
+        self.img = None
+
+    def load_output(self):
+        filename = QFileDialog.getExistingDirectory(
+            caption="Open File",
+            directory=getcwd(),
+        )
+        self.output.setText(f"...{filename[-17:]}/Predictions/")
+        self.output_folder = f"{filename}/Predictions/"
 
     def predict_semantic(self):
         """Pre-settings"""
@@ -373,7 +390,11 @@ class TardisWidget(QWidget):
         else:
             instances = True
 
-        cnn_threshold = 'auto' if float(self.cnn_threshold.text()) == 1.0 else self.cnn_threshold.text()
+        cnn_threshold = (
+            "auto"
+            if float(self.cnn_threshold.text()) == 1.0
+            else self.cnn_threshold.text()
+        )
 
         if self.model_version.currentText() == "None":
             model_version = None
@@ -386,7 +407,10 @@ class TardisWidget(QWidget):
             binary_mask=bool(self.mask.checkState()),
             correct_px=correct_px,
             convolution_nn=self.cnn_type.currentText(),
-            checkpoint=(None if self.checkpoint.text() == "None" else self.checkpoint.text(), None),
+            checkpoint=(
+                None if self.checkpoint.text() == "None" else self.checkpoint.text(),
+                None,
+            ),
             model_version=model_version,
             output_format=self.output_formats,
             patch_size=int(self.patch_size.currentText()),
@@ -405,6 +429,7 @@ class TardisWidget(QWidget):
             debug=False,
             tardis_logo=False,
         )
+        self.predictor.in_format = len(self.dir.split(".")[-1]) + 1
 
         self.predictor.get_file_list()
         self.predictor.create_headers()
@@ -427,56 +452,65 @@ class TardisWidget(QWidget):
                 image=self.predictor.image,
                 name=self.dir.split("/")[-1],
                 range_=(np.min(self.predictor.image), np.max(self.predictor.image)),
-                visibility=False
+                visibility=False,
+                transparency=False,
             )
 
             create_image_layer(
                 self.viewer,
                 image=np.zeros(self.predictor.scale_shape, dtype=np.float32),
-                name='Prediction',
+                name="Prediction",
                 transparency=True,
+                range_=None,
             )
 
             self.predictor.image = None
             self.scale_shape = self.predictor.scale_shape
 
         img_dataset = PredictionDataset(
-                        join(self.predictor.dir, "temp", "Patches", "imgs")
-                    )
-        worker = self.predict_dataset(img_dataset, self.predictor)
+            join(self.predictor.dir, "temp", "Patches", "imgs")
+        )
+
+        @thread_worker(
+            start_thread=False,
+            progress={"desc": "semantic-segmentation-progress"},
+            connect={"finished": self.update_cnn_threshold},
+        )
+        def predict_dataset(img_dataset_, predictor):
+            for j in range(len(img_dataset_)):
+                input_, name = img_dataset_.__getitem__(j)
+
+                input_ = predictor.predict_cnn_napari(input_, name)
+                update_viewer_prediction(
+                    self.viewer, input_, self.calculate_position(name)
+                )
+
+            show_info("Finished Semantic Prediction !")
+
+            self.img = self.predictor.image_stitcher(
+                image_dir=self.predictor.output, mask=False, dtype=np.float32
+            )[
+                : self.predictor.scale_shape[0],
+                : self.predictor.scale_shape[1],
+                : self.predictor.scale_shape[2],
+            ]
+            self.img, _ = scale_image(image=self.img, scale=self.predictor.org_shape)
+            self.img = torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
+            self.predictor.image = self.img
+
+        worker = predict_dataset(img_dataset, self.predictor)
         worker.start()
 
-    def cnn_postprocess(self):
-        self.img = self.predictor.image_stitcher(
-            image_dir=self.predictor.output, mask=False, dtype=np.float32
-        )[: self.predictor.scale_shape[0], : self.predictor.scale_shape[1], : self.predictor.scale_shape[2]]
-        self.img, _ = scale_image(image=self.img, scale=self.predictor.org_shape)
-        self.img = torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
-
-        self.img_threshold = None
-        if float(self.cnn_threshold.text()) == 1.0:
-            self.img_threshold = adaptive_threshold(self.img).astype(np.uint8)
-        elif float(self.cnn_threshold.text()) == 0.0:
-            self.img_threshold = np.copy(self.img)
-        else:
-            self.img_threshold = np.where(self.img >= float(self.cnn_threshold.text()), 1, 0).astype(np.uint8)
-
-        create_image_layer(
-            self.viewer,
-            image=self.img_threshold,
-            name='Prediction',
-            transparency=True,
-            range_=(0, 1)
-        )
-        self.predictor.image = self.img_threshold
-        self.predictor.save_semantic_mask(self.dir.split('/')[-1])
+    def update_dist_layer(self):
+        print("tests")
+        pass
 
     def predict_instance(self):
         self.output_formats = (
             f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
         )
 
-        if not self.output_formats.endswith('None'):
+        if not self.output_formats.endswith("None"):
             if self.predictor.dist is None:
                 self.predictor.output_format = self.output_formats
                 self.predictor.build_NN("Microtubule")
@@ -484,138 +518,213 @@ class TardisWidget(QWidget):
             self.segments = np.zeros((0, 4))
 
             if not self.img_threshold.min() == 0 and not self.img_threshold.max() == 1:
-                show_error('You need to first select CNN threshold greater then 0.0')
+                show_error("You need to first select CNN threshold greater then 0.0")
                 return
 
-            self.predictor.preprocess_DIST(self.dir.split('/')[-1])
+            @thread_worker(
+                start_thread=False,
+                progress={"desc": "instance-segmentation-progress"},
+                connect={"finished": self.update_dist_layer},
+            )
+            def predict_dist():
+                show_info("Started Instance Prediction !")
 
-            if len(self.predictor.pc_ld) > 0:
-                # Build patches dataset
-                (
-                    self.predictor.coords_df,
-                    _,
-                    self.predictor.output_idx,
-                    _,
-                ) = self.predictor.patch_pc.patched_dataset(coord=self.predictor.pc_ld)
+                self.predictor.preprocess_DIST(self.dir.split("/")[-1])
+                show_info(f"{len(self.predictor.pc_ld)}")
+                if len(self.predictor.pc_ld) > 0:
+                    # Build patches dataset
+                    (
+                        self.predictor.coords_df,
+                        _,
+                        self.predictor.output_idx,
+                        _,
+                    ) = self.predictor.patch_pc.patched_dataset(
+                        coord=self.predictor.pc_ld
+                    )
 
-                self.predictor.graphs = self.predictor.predict_DIST(id_=0, id_name=self.dir.split('/')[-1])
-                self.predictor.postprocess_DIST(id_=0, id_name=self.dir.split('/')[-1])
+                    self.predictor.graphs = self.predictor.predict_DIST(
+                        id_=0, id_name=self.dir.split("/")[-1]
+                    )
+                    self.predictor.postprocess_DIST(
+                        id_=0, id_name=self.dir.split("/")[-1]
+                    )
 
-                if self.predictor.segments is None:
-                    show_info('TARDIS-em could not find any instances :(')
-                    return
+                    if self.predictor.segments is None:
+                        show_info("TARDIS-em could not find any instances :(")
+                        return
 
-                self.predictor.save_instance_PC(self.dir.split('/')[-1])
-                self.predictor.clean_up(dir_=self.dir)
+                    self.predictor.save_instance_PC(self.dir.split("/")[-1])
+                    self.predictor.clean_up(dir_=self.dir)
+                    show_info("Finished Instance Prediction !")
 
-    @thread_worker
-    def predict_dataset(self, img_dataset, predictor):
-        for j in range(len(img_dataset)):
-            input_, name = img_dataset.__getitem__(j)
-
-            input_ = predictor.predict_cnn_napari(input_, name)
-            update_viewer_prediction(self.viewer, input_, self.calculate_position(name))
-
-        self.cnn_postprocess()
+            worker = predict_dist()
+            worker.start()
 
     def show_command(self):
         mask = "" if not bool(self.mask.checkState()) else "-ms True"
 
-        correct_px = "" if self.correct_px.text() == "None" else f"-px {float(self.correct_px.text())} "
+        correct_px = (
+            ""
+            if self.correct_px.text() == "None"
+            else f"-px {float(self.correct_px.text())} "
+        )
         if self.px is not None:
-            correct_px = "" if self.px == float(self.correct_px.text()) else f"-px {float(self.correct_px.text())} "
+            correct_px = (
+                ""
+                if self.px == float(self.correct_px.text())
+                else f"-px {float(self.correct_px.text())} "
+            )
 
         px = "" if not bool(self.mask.checkState()) else "-ms True "
 
-        ch = "" if self.checkpoint.text() == "None" else f"-ch {self.checkpoint.text()}_None "
+        ch = (
+            ""
+            if self.checkpoint.text() == "None"
+            else f"-ch {self.checkpoint.text()}_None "
+        )
 
-        mv = "" if self.model_version.currentText() == "None" else f"-mv {int(self.model_version.currentText())} "
+        mv = (
+            ""
+            if self.model_version.currentText() == "None"
+            else f"-mv {int(self.model_version.currentText())} "
+        )
 
-        cnn = "" if self.cnn_type.currentText() == 'fnet_attn' else f"-cnn {self.cnn_type.currentText()} "
+        cnn = (
+            ""
+            if self.cnn_type.currentText() == "fnet_attn"
+            else f"-cnn {self.cnn_type.currentText()} "
+        )
 
         rt = "" if bool(self.rotate.checkState()) else "-rt False "
 
-        ct = "-ct auto " if float(self.cnn_threshold.text()) == 1.0 else f"-ct {self.cnn_threshold.text()} "
+        ct = (
+            "-ct auto "
+            if float(self.cnn_threshold.text()) == 1.0
+            else f"-ct {self.cnn_threshold.text()} "
+        )
 
-        dt = f"-dt {float(self.dist_threshold.text())} " if not self.output_formats.endswith('None') else ""
+        dt = (
+            f"-dt {float(self.dist_threshold.text())} "
+            if not self.output_formats.endswith("None")
+            else ""
+        )
 
-        ap = "" if self.amira_prefix.text() == ".CorrelationLines" else f"-ap {self.amira_prefix.text()} "
-        acd = "" if self.amira_compare_distance.text() == "175" else f"-acd {self.amira_compare_distance.text()} "
-        aip = "" if self.amira_inter_probability.text() == "0.25" else f"-aip {self.amira_inter_probability.text()} "
+        ap = (
+            ""
+            if self.amira_prefix.text() == ".CorrelationLines"
+            else f"-ap {self.amira_prefix.text()} "
+        )
+        acd = (
+            ""
+            if self.amira_compare_distance.text() == "175"
+            else f"-acd {self.amira_compare_distance.text()} "
+        )
+        aip = (
+            ""
+            if self.amira_inter_probability.text() == "0.25"
+            else f"-aip {self.amira_inter_probability.text()} "
+        )
 
-        fl = "" if self.filter_by_length.text() == "1000" else f"-fl {int(self.filter_by_length.text())} "
-        cs = "" if self.connect_splines.text() == "2500" else f"-fl {int(self.connect_splines.text())} "
-        cc = "" if self.connect_cylinder.text() == "250" else f"-fl {int(self.connect_cylinder.text())} "
+        fl = (
+            ""
+            if self.filter_by_length.text() == "1000"
+            else f"-fl {int(self.filter_by_length.text())} "
+        )
+        cs = (
+            ""
+            if self.connect_splines.text() == "2500"
+            else f"-fl {int(self.connect_splines.text())} "
+        )
+        cc = (
+            ""
+            if self.connect_cylinder.text() == "250"
+            else f"-fl {int(self.connect_cylinder.text())} "
+        )
 
-        show_info(f"tardis_mt "
-                  f"-dir {self.out_} "
-                  f"{mask}"
-                  f"{px}"
-                  f"{ch}"
-                  f"{mv}"
-                  f"{cnn}"
-                  f"-out {self.output_formats} "
-                  f"-ps {int(self.patch_size.currentText())} "
-                  f"{rt}"
-                  f"{ct}"
-                  f"{dt}"
-                  f"{ap}"
-                  f"{acd}"
-                  f"{aip}"
-                  f"{fl}"
-                  f"{cs}"
-                  f"{cc}"
-                  f"-pv {int(self.points_in_patch.text())} "
-                  f"-dv {self.device.currentText()}")
+        show_info(
+            f"tardis_mt "
+            f"-dir {self.out_} "
+            f"{mask}"
+            f"{px}"
+            f"{ch}"
+            f"{mv}"
+            f"{cnn}"
+            f"-out {self.output_formats} "
+            f"-ps {int(self.patch_size.currentText())} "
+            f"{rt}"
+            f"{ct}"
+            f"{dt}"
+            f"{ap}"
+            f"{acd}"
+            f"{aip}"
+            f"{fl}"
+            f"{cs}"
+            f"{cc}"
+            f"-pv {int(self.points_in_patch.text())} "
+            f"-dv {self.device.currentText()}"
+        )
 
     def update_cnn_threshold(self):
         if self.img is not None:
+            self.viewer.layers[self.dir.split("/")[-1]].visible = True
+
             if float(self.cnn_threshold.text()) == 1.0:
                 self.img_threshold = adaptive_threshold(self.img).astype(np.uint8)
             elif float(self.cnn_threshold.text()) == 0.0:
                 self.img_threshold = np.copy(self.img)
             else:
-                self.img_threshold = np.where(self.img >= float(self.cnn_threshold.text()), 1, 0).astype(np.uint8)
+                self.img_threshold = np.where(
+                    self.img >= float(self.cnn_threshold.text()), 1, 0
+                ).astype(np.uint8)
 
             create_image_layer(
                 self.viewer,
                 image=self.img_threshold,
-                name='Prediction',
+                name="Prediction",
                 transparency=True,
-                range_=(0, 1)
+                range_=(0, 1),
             )
+
+            self.predictor.image = self.img_threshold
+            self.predictor.save_semantic_mask(self.dir.split("/")[-1])
 
     def update_versions(self):
         for i in range(self.model_version.count()):
             self.model_version.removeItem(0)
 
-        versions = get_all_version_aws(self.cnn_type.currentText(), '32', "microtubules_3d")
+        versions = get_all_version_aws(
+            self.cnn_type.currentText(), "32", "microtubules_3d"
+        )
 
         if len(versions) == 0:
             self.model_version.addItems(["None"])
         else:
-            self.model_version.addItems(["None"] + [i.split('_')[-1] for i in versions])
+            self.model_version.addItems(["None"] + [i.split("_")[-1] for i in versions])
 
     def calculate_position(self, name):
         patch_size = int(self.patch_size.currentText())
-        name = name.split('_')
+        name = name.split("_")
         name = {
-            'z': int(name[1]),
-            'y': int(name[2]),
-            'x': int(name[3]),
-            'stride': int(name[4]),
+            "z": int(name[1]),
+            "y": int(name[2]),
+            "x": int(name[3]),
+            "stride": int(name[4]),
         }
 
-        x_start = (name['x'] * patch_size) - (name['x'] * name['stride'])
+        x_start = (name["x"] * patch_size) - (name["x"] * name["stride"])
         x_end = x_start + patch_size
-        name['x'] = [x_start, x_end]
+        name["x"] = [x_start, x_end]
 
-        y_start = (name['y'] * patch_size) - (name['y'] * name['stride'])
+        y_start = (name["y"] * patch_size) - (name["y"] * name["stride"])
         y_end = y_start + patch_size
-        name['y'] = [y_start, y_end]
+        name["y"] = [y_start, y_end]
 
-        z_start = (name['z'] * patch_size) - (name['z'] * name['stride'])
+        z_start = (name["z"] * patch_size) - (name["z"] * name["stride"])
         z_end = z_start + patch_size
-        name['z'] = [z_start, z_end]
+        name["z"] = [z_start, z_end]
 
         return name
+
+
+def len_of_progress(lenght_):
+    return lenght_

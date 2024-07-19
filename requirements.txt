@@ -1,5 +1,12 @@
+setuptools>=70.3.0
+
 napari>=0.5.0
-pyqt5>=5.15.10
 
 torch>=2.3.0
-tardis_em>=0.2.8
+tardis_em>=0.2.7
+
+numpy>=2.0.0
+
+matplotlib>=3.9.1
+qtpy>=2.4.1
+pyqt5>=5.15.10
