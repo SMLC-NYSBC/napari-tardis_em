@@ -526,6 +526,8 @@ class TardisWidget(QWidget):
                 self.first_25_m = []
                 self.img_indexes = []
 
+                loss = []
+                f1 =  []
                 for idx, (img, mask) in enumerate(self.test_DL):
                     if idx < 25:
                         self.img_indexes.append(img.cpu().detach().numpy()[0, 0, :])
@@ -534,20 +536,22 @@ class TardisWidget(QWidget):
                     with torch.no_grad():
                         img = self.model(img)
                         loss = self.loss_fn(img, mask)
-                        self.validation_loss.append(loss.item())
+                        loss.append(loss.item())
 
                         img = torch.sigmoid(img)[0, 0, :]
                         mask = mask[0, 0, :]
 
                         img = np.where(img.cpu().detach().numpy() >= 0.5, 1, 0)
                         mask = mask.cpu().detach().numpy()
-                        acc, prec, recall, f1 = calculate_f1(
+                        acc, prec, recall, f1_s = calculate_f1(
                             logits=img, targets=mask, best_f1=False
                         )
-                        self.scores.append(f1)
+                        f1.append(f1_s)
 
                     if idx < 25:
                         self.first_25_m.append(img)
+                self.validation_loss.append(np.mean(loss))
+                self.scores.append(np.mean(f1))
 
             def _mid_training_eval(idx):
                 if idx % (len(self.train_DL) // 4) == 0:
