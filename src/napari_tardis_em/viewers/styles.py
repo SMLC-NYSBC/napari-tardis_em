@@ -110,7 +110,10 @@ def build_gird_with_masks(
 
         if predictions is not None:
             crop_grid_scores = np.zeros(
-                (5 * crop_size + (5 - 1) * gap_size, 5 * crop_size + (5 - 1) * gap_size),
+                (
+                    5 * crop_size + (5 - 1) * gap_size,
+                    5 * crop_size + (5 - 1) * gap_size,
+                ),
                 dtype=predictions[0].dtype,
             )
         else:
@@ -123,8 +126,12 @@ def build_gird_with_masks(
         if crop_grid_scores is not None:
             for idx, (i, j) in enumerate(zip(imgs, predictions)):
                 # Add crops
-                crop_grid_img[0:crop_size, y_min : y_min + crop_size, x_min : x_min + crop_size] = i
-                crop_grid_scores[0:crop_size, y_min : y_min + crop_size, x_min : x_min + crop_size] = j
+                crop_grid_img[
+                    0:crop_size, y_min : y_min + crop_size, x_min : x_min + crop_size
+                ] = i
+                crop_grid_scores[
+                    0:crop_size, y_min : y_min + crop_size, x_min : x_min + crop_size
+                ] = j
 
                 if (idx + 1) % grid == 0 and x_min != 0:
                     x_min = 0
@@ -134,7 +141,9 @@ def build_gird_with_masks(
         else:
             for idx, i in enumerate(imgs):
                 # Add crops
-                crop_grid_img[0:crop_size, y_min: y_min + crop_size, x_min: x_min + crop_size] = i
+                crop_grid_img[
+                    0:crop_size, y_min : y_min + crop_size, x_min : x_min + crop_size
+                ] = i
 
                 if (idx + 1) % grid == 0 and x_min != 0:
                     x_min = 0
@@ -145,8 +154,10 @@ def build_gird_with_masks(
         if crop_grid_scores is not None:
             for idx, (i, j) in enumerate(zip(imgs, predictions)):
                 # Add crops
-                crop_grid_img[y_min: y_min + crop_size, x_min: x_min + crop_size] = i
-                crop_grid_scores[y_min: y_min + crop_size, x_min: x_min + crop_size] = j
+                crop_grid_img[y_min : y_min + crop_size, x_min : x_min + crop_size] = i
+                crop_grid_scores[
+                    y_min : y_min + crop_size, x_min : x_min + crop_size
+                ] = j
 
                 if (idx + 1) % grid == 0 and x_min != 0:
                     x_min = 0
@@ -156,7 +167,7 @@ def build_gird_with_masks(
         else:
             for idx, i in enumerate(imgs):
                 # Add crops
-                crop_grid_img[y_min: y_min + crop_size, x_min: x_min + crop_size] = i
+                crop_grid_img[y_min : y_min + crop_size, x_min : x_min + crop_size] = i
 
                 if (idx + 1) % grid == 0 and x_min != 0:
                     x_min = 0

@@ -68,7 +68,7 @@ def create_image_layer(
         pass
 
     if transparency:
-        viewer.add_image(image, name=name, colormap='red', opacity=0.5)
+        viewer.add_image(image, name=name, colormap="red", opacity=0.5)
     else:
         viewer.add_image(image, name=name, colormap="gray", opacity=1.0)
 

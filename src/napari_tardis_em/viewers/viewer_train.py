@@ -40,8 +40,15 @@ from tardis_em.utils.metrics import calculate_f1
 
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers import loss_functions
-from napari_tardis_em.viewers.styles import border_style, PlotPopup, build_gird_with_masks
-from napari_tardis_em.viewers.utils import setup_environment_and_dataset, create_image_layer
+from napari_tardis_em.viewers.styles import (
+    border_style,
+    PlotPopup,
+    build_gird_with_masks,
+)
+from napari_tardis_em.viewers.utils import (
+    setup_environment_and_dataset,
+    create_image_layer,
+)
 
 
 class TardisWidget(QWidget):
@@ -520,38 +527,42 @@ class TardisWidget(QWidget):
             @thread_worker(
                 start_thread=False,
                 progress={"desc": f"Validation-{self.cnn_type.currentText()}"},
-                connect={"finished": self.show_validation}
+                connect={"finished": self.show_validation},
             )
             def _validate():
                 self.first_25_m = []
                 self.img_indexes = []
 
-                loss = []
-                f1 =  []
+                loss_ = []
+                f1_s = []
                 for idx, (img, mask) in enumerate(self.test_DL):
                     if idx < 25:
                         self.img_indexes.append(img.cpu().detach().numpy()[0, 0, :])
 
-                    img, mask = img.to(self.device.currentText()), mask.to(self.device.currentText())
+                    img, mask = img.to(self.device.currentText()), mask.to(
+                        self.device.currentText()
+                    )
                     with torch.no_grad():
                         img = self.model(img)
                         loss = self.loss_fn(img, mask)
-                        loss.append(loss.item())
+                        loss_.append(loss.item())
 
                         img = torch.sigmoid(img)[0, 0, :]
                         mask = mask[0, 0, :]
 
                         img = np.where(img.cpu().detach().numpy() >= 0.5, 1, 0)
                         mask = mask.cpu().detach().numpy()
-                        acc, prec, recall, f1_s = calculate_f1(
+                        acc, prec, recall, f1 = calculate_f1(
                             logits=img, targets=mask, best_f1=False
                         )
-                        f1.append(f1_s)
+                        f1_s.append(f1)
 
                     if idx < 25:
                         self.first_25_m.append(img)
-                self.validation_loss.append(np.mean(loss))
+                yield
+
                 self.scores.append(np.mean(f1))
+                self.validation_loss.append(np.mean(loss_))
 
             def _mid_training_eval(idx):
                 if idx % (len(self.train_DL) // 4) == 0:
@@ -589,7 +600,9 @@ class TardisWidget(QWidget):
                     _mid_training_eval(idx=idx)
 
                     """Training"""
-                    i, m = i.to(self.device.currentText()), m.to(self.device.currentText())
+                    i, m = i.to(self.device.currentText()), m.to(
+                        self.device.currentText()
+                    )
 
                     self.optimizer.zero_grad()
                     i = self.model(i)  # one forward pass
@@ -626,7 +639,9 @@ class TardisWidget(QWidget):
 
         self.out_ = filename
 
-        self.output.setText(f"...{self.out_[-17:]}/{self.cnn_type.currentText()}_checkpoints/")
+        self.output.setText(
+            f"...{self.out_[-17:]}/{self.cnn_type.currentText()}_checkpoints/"
+        )
 
         self.directory.setText(filename[-30:])
 
@@ -639,7 +654,9 @@ class TardisWidget(QWidget):
             directory=os.getcwd(),
         )
 
-        self.output.setText(f"...{filename[-17:]}/{self.cnn_type.currentText()}_checkpoints/")
+        self.output.setText(
+            f"...{filename[-17:]}/{self.cnn_type.currentText()}_checkpoints/"
+        )
         self.output_folder = f"{filename}/{self.cnn_type.currentText()}_checkpoints/"
 
     def show_validation(self, init_=False):
@@ -654,26 +671,32 @@ class TardisWidget(QWidget):
             self.training_plot.show()
         else:
             try:
-                self.viewer.layers.remove('GT')
+                self.viewer.layers.remove("GT")
             except Exception as e:
                 pass
 
-        self.training_plot.update_plot(self.training_loss, self.validation_loss, self.scores)
+        self.training_plot.update_plot(
+            self.training_loss, self.validation_loss, self.scores
+        )
 
-        img, predictions = build_gird_with_masks(self.img_indexes, self.first_25_m, int(self.patch_size.currentText()))
-        create_image_layer(self.viewer,
-                           img,
-                           'Validation_dataset_sample',
-                           transparency=False,
-                           visibility=True,
-                           range_=(-1, 1)
-                           )
+        img, predictions = build_gird_with_masks(
+            self.img_indexes, self.first_25_m, int(self.patch_size.currentText())
+        )
+        create_image_layer(
+            self.viewer,
+            img,
+            "Validation_dataset_sample",
+            transparency=False,
+            visibility=True,
+            range_=(-1, 1),
+        )
 
         if predictions is not None:
-            create_image_layer(self.viewer,
-                               predictions,
-                               'GT' if init_ else 'Validation_prediction',
-                               transparency=True,
-                               visibility=True,
-                               range_=(0, 1)
-                               )
+            create_image_layer(
+                self.viewer,
+                predictions,
+                "GT" if init_ else "Validation_prediction",
+                transparency=True,
+                visibility=True,
+                range_=(0, 1),
+            )
