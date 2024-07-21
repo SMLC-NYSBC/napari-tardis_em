@@ -72,7 +72,6 @@ class TardisWidget(QWidget):
         self.out_, self.output_folder = None, None
 
         self.dir = os.getcwd()
-        self.output_folder = f"{os.getcwd()}/{self.cnn_type.currentText()}_checkpoints/"
 
         """""" """""" """
           UI Elements
@@ -117,6 +116,7 @@ class TardisWidget(QWidget):
         self.cnn_type.addItems(["unet", "resnet", "unet3plus", "fnet", "fnet_attn"])
         self.cnn_type.setCurrentIndex(0)
         self.cnn_type.setToolTip("Select type of CNN you would like to train.")
+        self.output_folder = f"{os.getcwd()}/{self.cnn_type.currentText()}_checkpoints/"
 
         self.image_type = QComboBox()
         self.image_type.addItems(["2D", "3D"])
