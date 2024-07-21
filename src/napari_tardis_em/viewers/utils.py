@@ -83,6 +83,9 @@ def create_point_layer(
         z = np.zeros((len(points), 1))
         points = np.hstack((z, points))
 
+    viewer.layers.select_all()
+    viewer.layers.toggle_selected_visibility()
+
     viewer.add_points(
         points,
         features=point_features,
@@ -91,6 +94,18 @@ def create_point_layer(
         visible=visibility,
         size=35,
     )
+
+    try:
+        viewer.layers["Predicted_Instances"].visible = True
+    except Exception as e:
+        pass
+
+    try:
+        viewer.layers["Predicted_Instances_filter"].visible = True
+    except Exception as e:
+        pass
+
+    viewer.dims.ndisplay = 3
 
 
 def create_image_layer(

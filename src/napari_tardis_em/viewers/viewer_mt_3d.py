@@ -42,7 +42,11 @@ from tardis_em.utils.setup_envir import clean_up
 
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
-from napari_tardis_em.viewers.utils import create_image_layer, update_viewer_prediction, create_point_layer
+from napari_tardis_em.viewers.utils import (
+    create_image_layer,
+    update_viewer_prediction,
+    create_point_layer,
+)
 
 
 class TardisWidget(QWidget):
@@ -88,7 +92,7 @@ class TardisWidget(QWidget):
         ##############################
         # Setting user should change #
         ##############################
-        label_2 = QLabel("Setting user should change")
+        label_2 = QLabel("Setting user should change          ")
         label_2.setStyleSheet(border_style("green"))
 
         self.output_semantic = QComboBox()
@@ -96,7 +100,7 @@ class TardisWidget(QWidget):
         self.output_semantic.setToolTip("Select semantic output format file.")
 
         self.output_instance = QComboBox()
-        self.output_instance.addItems(["None", "csv", "npy", "amSG"])
+        self.output_instance.addItems(["None", "csv", "npy", "amSG", "mrc"])
         self.output_instance.setToolTip("Select instance output format file.")
 
         self.output_formats = (
@@ -106,7 +110,7 @@ class TardisWidget(QWidget):
         ###########################
         # Setting user may change #
         ###########################
-        label_3 = QLabel("Setting user may change")
+        label_3 = QLabel("Setting user may change             ")
         label_3.setStyleSheet(border_style("yellow"))
 
         self.mask = QCheckBox()
@@ -136,7 +140,7 @@ class TardisWidget(QWidget):
         self.patch_size.addItems(
             ["32", "64", "96", "128", "160", "192", "256", "512", "1024"]
         )
-        self.patch_size.setCurrentIndex(2)
+        self.patch_size.setCurrentIndex(3)
         self.patch_size.setToolTip(
             "Select patch size value that will be used to split \n"
             "all images into smaller patches."
@@ -155,7 +159,7 @@ class TardisWidget(QWidget):
         self.cnn_threshold.setDecimals(2)
         self.cnn_threshold.setMinimum(0)
         self.cnn_threshold.setMaximum(1)
-        self.cnn_threshold.setSingleStep(0.05)
+        self.cnn_threshold.setSingleStep(0.01)
         self.cnn_threshold.setValue(0.25)
         self.cnn_threshold.setToolTip(
             "Threshold value for binary prediction. Lower value will increase \n"
@@ -172,7 +176,7 @@ class TardisWidget(QWidget):
         self.dist_threshold.setDecimals(2)
         self.dist_threshold.setMinimum(0)
         self.dist_threshold.setMaximum(1)
-        self.dist_threshold.setSingleStep(0.05)
+        self.dist_threshold.setSingleStep(0.01)
         self.dist_threshold.setValue(0.50)
         self.dist_threshold.setToolTip(
             "Threshold value for instance prediction. Lower value will increase \n"
@@ -206,6 +210,9 @@ class TardisWidget(QWidget):
         self.update_versions()
         self.model_version.setToolTip("Optional version of the model from 1 to inf.")
 
+        label_run = QLabel("Start Prediction                 ")
+        label_run.setStyleSheet(border_style("blue"))
+
         self.predict_1_button = QPushButton("Predict Semantic...")
         self.predict_1_button.setMinimumWidth(225)
         self.predict_1_button.clicked.connect(self.predict_semantic)
@@ -223,7 +230,7 @@ class TardisWidget(QWidget):
         #################################
         # Optional Microtubules Filters #
         #################################
-        label_5 = QLabel("Optional Microtubules Filters")
+        label_5 = QLabel("Optional Microtubules Filters      ")
         label_5.setStyleSheet(border_style("orange"))
 
         self.amira_prefix = QLineEdit(".CorrelationLines")
@@ -318,6 +325,7 @@ class TardisWidget(QWidget):
         layout.addRow("No. of points [DIST]", self.points_in_patch)
         layout.addRow("Model Version", self.model_version)
 
+        layout.addRow("---- Run Prediction -----", label_run)
         layout.addRow("", self.predict_1_button)
         layout.addRow("", self.predict_2_button)
         layout.addRow("", self.export_command)
@@ -408,10 +416,10 @@ class TardisWidget(QWidget):
             binary_mask=bool(self.mask.checkState()),
             correct_px=correct_px,
             convolution_nn=self.cnn_type.currentText(),
-            checkpoint=(
+            checkpoint=[
                 None if self.checkpoint.text() == "None" else self.checkpoint.text(),
                 None,
-            ),
+            ],
             model_version=model_version,
             output_format=self.output_formats,
             patch_size=int(self.patch_size.currentText()),
@@ -495,8 +503,12 @@ class TardisWidget(QWidget):
                     : self.predictor.scale_shape[1],
                     : self.predictor.scale_shape[2],
                 ]
-                self.img, _ = scale_image(image=self.img, scale=self.predictor.org_shape)
-                self.img = torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
+                self.img, _ = scale_image(
+                    image=self.img, scale=self.predictor.org_shape
+                )
+                self.img = (
+                    torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
+                )
                 self.predictor.image = self.img
 
             worker = predict_dataset(img_dataset, self.predictor)
@@ -509,7 +521,17 @@ class TardisWidget(QWidget):
             create_point_layer(
                 viewer=self.viewer,
                 points=self.predictor.segments,
-                name='Predicted_Instances',
+                name="Predicted_Instances",
+                visibility=True,
+            )
+        else:
+            return
+
+        if self.predictor.segments_filter is not None:
+            create_point_layer(
+                viewer=self.viewer,
+                points=self.predictor.segments_filter,
+                name="Predicted_Instances_filter",
                 visibility=True,
             )
         else:
@@ -531,7 +553,10 @@ class TardisWidget(QWidget):
 
             self.segments = np.zeros((0, 4))
 
-            if not self.predictor.image.min() == 0 and not self.predictor.image.max() == 1:
+            if (
+                not self.predictor.image.min() == 0
+                and not self.predictor.image.max() == 1
+            ):
                 show_error("You need to first select CNN threshold greater then 0.0")
                 return
 
@@ -558,15 +583,15 @@ class TardisWidget(QWidget):
                     self.predictor.graphs = self.predictor.predict_DIST(
                         id_=0, id_name=self.dir.split("/")[-1]
                     )
-                    self.predictor.postprocess_DIST(
-                        id_=0, i=self.dir.split("/")[-1]
-                    )
+                    self.predictor.postprocess_DIST(id_=0, i=self.dir.split("/")[-1])
 
                     if self.predictor.segments is None:
                         show_info("TARDIS-em could not find any instances :(")
                         return
                     else:
-                        show_info(f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)")
+                        show_info(
+                            f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)"
+                        )
                         self.predictor.save_instance_PC(self.dir.split("/")[-1])
                         clean_up(dir_=self.dir)
                     show_info("Finished Instance Prediction !")
@@ -738,7 +763,3 @@ class TardisWidget(QWidget):
         name["z"] = [z_start, z_end]
 
         return name
-
-
-def len_of_progress(lenght_):
-    return lenght_
