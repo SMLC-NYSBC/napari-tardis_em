@@ -392,7 +392,11 @@ class TardisWidget(QWidget):
             dir_=self.dir,
             binary_mask=bool(self.mask.checkState()),
             correct_px=correct_px,
-            normalize_px=None if self.normalize_px.text() == "None" else float(self.normalize_px.text()),
+            normalize_px=(
+                None
+                if self.normalize_px.text() == "None"
+                else float(self.normalize_px.text())
+            ),
             convolution_nn=self.cnn_type.currentText(),
             checkpoint=[
                 None if self.checkpoint.text() == "None" else self.checkpoint.text(),
