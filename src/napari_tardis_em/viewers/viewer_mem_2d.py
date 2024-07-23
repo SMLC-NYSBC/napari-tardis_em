@@ -459,7 +459,6 @@ class TardisWidget(QWidget):
                 )[
                     : self.predictor.scale_shape[0],
                     : self.predictor.scale_shape[1],
-                    : self.predictor.scale_shape[2],
                 ]
                 self.img, _ = scale_image(
                     image=self.img, scale=self.predictor.org_shape
@@ -475,6 +474,8 @@ class TardisWidget(QWidget):
             return
 
     def update_dist_layer(self):
+        self.predictor.image = self.img_threshold
+
         if self.predictor.segments is not None:
             create_point_layer(
                 viewer=self.viewer,

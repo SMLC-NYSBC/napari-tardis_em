@@ -24,33 +24,60 @@ from tardis_em.utils.errors import TardisError
 def update_viewer_prediction(viewer, image: np.ndarray, position: dict):
     img = viewer.layers["Prediction"]
 
-    try:
-        img.data[
-            position["z"][0] : position["z"][1],
-            position["y"][0] : position["y"][1],
-            position["x"][0] : position["x"][1],
-        ] = image
-    except ValueError:
-        shape_ = img.data.shape
-        diff = [
-            image.shape[0] - (position["z"][1] - shape_[0]),
-            image.shape[0] - (position["y"][1] - shape_[1]),
-            image.shape[0] - (position["x"][1] - shape_[2]),
-        ]
-        diff = [
-            diff[0] if 0 < diff[0] < image.shape[0] else image.shape[0],
-            diff[1] if 0 < diff[1] < image.shape[0] else image.shape[0],
-            diff[2] if 0 < diff[2] < image.shape[0] else image.shape[0],
-        ]
-        position["z"][1] = position["z"][0] + diff[0]
-        position["y"][1] = position["y"][0] + diff[1]
-        position["x"][1] = position["x"][0] + diff[2]
+    ndim = img.data.ndim
+    shape_ = img.data.shape
 
-        img.data[
-            position["z"][0] : position["z"][1],
-            position["y"][0] : position["y"][1],
-            position["x"][0] : position["x"][1],
-        ] = image[: diff[0], : diff[1], : diff[2]]
+    try:
+        if ndim == 3:
+            img.data[
+                position["z"][0] : position["z"][1],
+                position["y"][0] : position["y"][1],
+                position["x"][0] : position["x"][1],
+            ] = image
+        else:
+            img.data[
+                position["y"][0] : position["y"][1],
+                position["x"][0] : position["x"][1],
+            ] = image
+    except ValueError:
+        if ndim == 3:
+            diff = [
+                image.shape[0] - (position["z"][1] - shape_[0]),
+                image.shape[0] - (position["y"][1] - shape_[1]),
+                image.shape[0] - (position["x"][1] - shape_[2]),
+            ]
+            diff = [
+                diff[0] if 0 < diff[0] < image.shape[0] else image.shape[0],
+                diff[1] if 0 < diff[1] < image.shape[0] else image.shape[0],
+                diff[2] if 0 < diff[2] < image.shape[0] else image.shape[0],
+            ]
+            position["z"][1] = position["z"][0] + diff[0]
+            position["y"][1] = position["y"][0] + diff[1]
+            position["x"][1] = position["x"][0] + diff[2]
+
+            img.data[
+                position["z"][0] : position["z"][1],
+                position["y"][0] : position["y"][1],
+                position["x"][0] : position["x"][1],
+            ] = image[: diff[0], : diff[1], : diff[2]]
+        else:
+            diff = [
+                image.shape[0] - (position["y"][1] - shape_[0]),
+                image.shape[0] - (position["x"][1] - shape_[1]),
+            ]
+            diff = [
+                diff[0] if 0 < diff[0] < image.shape[0] else image.shape[0],
+                diff[1] if 0 < diff[1] < image.shape[0] else image.shape[0],
+            ]
+            position["y"][1] = position["y"][0] + diff[0]
+            position["x"][1] = position["x"][0] + diff[1]
+
+            img.data[
+            position["y"][0]: position["y"][1],
+            position["x"][0]: position["x"][1],
+            ] = image[: diff[0], : diff[1],]
+    viewer.layers["Prediction"].visible = False
+    viewer.layers["Prediction"].visible = True
 
 
 def create_point_layer(
@@ -74,15 +101,21 @@ def create_point_layer(
         pass
 
     point_features = {
-        "confidence": tuple(points[:, 0].flatten()),
+        "confidence": tuple(points[:, 0].flatten()*np.random.randint(100)),
     }
     points = np.array(points[:, 1:])
 
     # Assert points in 3D
     if points.shape[1] == 2:
         z = np.zeros((len(points), 1))
-        points = np.hstack((z, points))
+        points = np.hstack((points, z))
 
+    # Convert xyz to zyx
+    points = np.vstack((
+        points[:, 2],
+        points[:, 1],
+        points[:, 0]
+    )).T
     viewer.layers.select_all()
     viewer.layers.toggle_selected_visibility()
 
@@ -165,7 +198,7 @@ def create_image_layer(
         viewer.layers[name].visible = False
 
 
-def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size):
+def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size, correct_pixel_size=None):
     """Set environment"""
     TRAIN_IMAGE_DIR = join(dir_, "train", "imgs")
     TRAIN_MASK_DIR = join(dir_, "train", "masks")
@@ -177,10 +210,10 @@ def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size):
         with_img=True,
         train_img=TRAIN_IMAGE_DIR,
         train_mask=TRAIN_MASK_DIR,
-        img_format=(".mrc", ".tif"),
+        img_format=IMG_FORMAT,
         test_img=TEST_IMAGE_DIR,
         test_mask=TEST_MASK_DIR,
-        mask_format=("_mask.mrc", "_mask.tif"),
+        mask_format=("_mask.am", ".CorrelationLines.am", "_mask.mrc", "_mask.tif", "_mask.csv"),
     )
 
     """Optionally: Set-up environment if not existing"""
@@ -216,6 +249,7 @@ def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size):
             resize_pixel_size=pixel_size,
             trim_xy=patch_size,
             trim_z=patch_size,
+            correct_pixel_size=correct_pixel_size,
         )
 
         no_dataset = int(len([f for f in listdir(dir_) if f.endswith(IMG_FORMAT)]) / 2)

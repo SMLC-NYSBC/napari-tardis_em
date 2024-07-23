@@ -118,6 +118,14 @@ class TardisWidget(QWidget):
         self.filament.setToolTip(
             "Define if you you want to predict filament like structure of object."
         )
+        self.filament.clicked.connect(self.update_filament_setting)
+
+        self.image_type = QComboBox()
+        self.image_type.addItems(["2D", "3D"])
+        self.image_type.setCurrentIndex(1)
+        self.image_type.setToolTip(
+            "Select type of images you would like to train CNN model on."
+        )
 
         self.mask = QCheckBox()
         self.mask.setCheckState(Qt.CheckState.Unchecked)
@@ -138,8 +146,12 @@ class TardisWidget(QWidget):
         self.cnn_type.setCurrentIndex(4)
         self.cnn_type.setToolTip("Select type of CNN you would like to train.")
 
-        self.checkpoint = QLineEdit("None")
-        self.checkpoint.setToolTip("Optional, directory to CNN checkpoint.")
+        self.checkpoint = QPushButton("None")
+        self.checkpoint.setToolTip(
+            "Optional, directory to CNN checkpoint to restart training."
+        )
+        self.checkpoint.clicked.connect(self.update_checkpoint_dir)
+        self.checkpoint_dir = None
 
         self.patch_size = QComboBox()
         self.patch_size.addItems(
@@ -283,6 +295,7 @@ class TardisWidget(QWidget):
 
         layout.addRow("----- Extra --------", label_3)
         layout.addRow("Predict filament", self.filament)
+        layout.addRow("Image type", self.image_type)
         layout.addRow("Input as a mask", self.mask)
         layout.addRow("Correct pixel size", self.correct_px)
         layout.addRow("CNN type", self.cnn_type)
@@ -308,6 +321,11 @@ class TardisWidget(QWidget):
         layout.addRow("", self.export_command)
 
         self.setLayout(layout)
+
+    def update_filament_setting(self):
+        self.filter_by_length.setText("1000")
+        self.connect_splines.setText("2500")
+        self.connect_cylinder.setText("250")
 
     def load_directory(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -387,6 +405,22 @@ class TardisWidget(QWidget):
         else:
             self.predict_type = "General_object"
 
+        filter_by_length = self.filter_by_length.text()
+        connect_splines = self.connect_splines.text()
+        connect_cylinder = self.connect_cylinder.text()
+        if filter_by_length == "None":
+            filter_by_length = None
+        else:
+            filter_by_length = int(self.filter_by_length.text())
+        if connect_splines == "None":
+            connect_splines = None
+        else:
+            connect_splines = int(connect_splines)
+        if connect_cylinder == "None":
+            connect_cylinder = None
+        else:
+            connect_cylinder = int(connect_cylinder)
+
         self.predictor = GeneralPredictor(
             predict=self.predict_type,
             dir_=self.dir,
@@ -399,7 +433,7 @@ class TardisWidget(QWidget):
             ),
             convolution_nn=self.cnn_type.currentText(),
             checkpoint=[
-                None if self.checkpoint.text() == "None" else self.checkpoint.text(),
+                None if self.checkpoint.text() == "None" else self.checkpoint_dir,
                 None,
             ],
             output_format=self.output_formats,
@@ -408,9 +442,9 @@ class TardisWidget(QWidget):
             dist_threshold=float(self.dist_threshold.text()),
             points_in_patch=int(self.points_in_patch.text()),
             predict_with_rotation=bool(self.rotate.checkState()),
-            filter_by_length=int(self.filter_by_length.text()),
-            connect_splines=int(self.connect_splines.text()),
-            connect_cylinder=int(self.connect_cylinder.text()),
+            filter_by_length=filter_by_length,
+            connect_splines=connect_splines,
+            connect_cylinder=connect_cylinder,
             instances=instances,
             device_=self.device.currentText(),
             debug=False,
@@ -421,6 +455,13 @@ class TardisWidget(QWidget):
         self.predictor.get_file_list()
         self.predictor.create_headers()
         self.predictor.load_data(id_name=self.predictor.predict_list[0])
+
+        if self.image_type.currentText() == "2D":
+            self.predictor.expect_2d = True
+            self.predictor.cnn._2d = True
+        else:
+            self.predictor.expect_2d = False
+            self.predictor.cnn._2d = False
 
         if not bool(self.mask.checkState()):
             trim_with_stride(
@@ -451,7 +492,6 @@ class TardisWidget(QWidget):
                 range_=None,
             )
 
-            self.predictor.image = None
             self.scale_shape = self.predictor.scale_shape
 
             img_dataset = PredictionDataset(
@@ -474,13 +514,21 @@ class TardisWidget(QWidget):
 
                 show_info("Finished Semantic Prediction !")
 
-                self.img = self.predictor.image_stitcher(
-                    image_dir=self.predictor.output, mask=False, dtype=np.float32
-                )[
-                    : self.predictor.scale_shape[0],
-                    : self.predictor.scale_shape[1],
-                    : self.predictor.scale_shape[2],
-                ]
+                if self.predictor.expect_2d:
+                    self.img = self.predictor.image_stitcher(
+                        image_dir=self.predictor.output, mask=False, dtype=np.float32
+                    )[
+                        : self.predictor.scale_shape[0],
+                        : self.predictor.scale_shape[1],
+                    ]
+                else:
+                    self.img = self.predictor.image_stitcher(
+                        image_dir=self.predictor.output, mask=False, dtype=np.float32
+                    )[
+                               : self.predictor.scale_shape[0],
+                               : self.predictor.scale_shape[1],
+                               : self.predictor.scale_shape[2],
+                               ]
                 self.img, _ = scale_image(
                     image=self.img, scale=self.predictor.org_shape
                 )
@@ -495,6 +543,8 @@ class TardisWidget(QWidget):
             return
 
     def update_dist_layer(self):
+        self.predictor.image = self.img_threshold
+
         if self.predictor.segments is not None:
             create_point_layer(
                 viewer=self.viewer,
@@ -597,7 +647,7 @@ class TardisWidget(QWidget):
         ch = (
             ""
             if self.checkpoint.text() == "None"
-            else f"-ch {self.checkpoint.text()}_None "
+            else f"-ch {self.checkpoint_dir}_None "
         )
 
         mv = (
@@ -728,3 +778,11 @@ class TardisWidget(QWidget):
         name["z"] = [z_start, z_end]
 
         return name
+
+    def update_checkpoint_dir(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            caption="Open File",
+            directory=getcwd(),
+        )
+        self.checkpoint.setText(filename[-30:])
+        self.checkpoint_dir = filename

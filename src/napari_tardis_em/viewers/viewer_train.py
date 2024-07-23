@@ -138,10 +138,12 @@ class TardisWidget(QWidget):
             "Select available device on which you want to train your model."
         )
 
-        self.checkpoint = QLineEdit("None")
+        self.checkpoint = QPushButton("None")
         self.checkpoint.setToolTip(
             "Optional, directory to CNN checkpoint to restart training."
         )
+        self.checkpoint.clicked.connect(self.update_checkpoint_dir)
+        self.checkpoint_dir = None
 
         ###########################
         # Setting user may change #
@@ -150,14 +152,22 @@ class TardisWidget(QWidget):
         label_3.setStyleSheet(border_style("yellow"))
 
         self.pixel_size = QLineEdit("None")
-        self.pixel_size.setValidator(QDoubleValidator(0.1, 50.0, 2))
+        self.pixel_size.setValidator(QDoubleValidator(0.1, 1000.0, 3))
         self.pixel_size.setToolTip(
             "Optionally, select pixel size value that will be \n"
             "used to normalize all images fixed resolution."
         )
 
+        self.correct_pixel_size = QLineEdit("None")
+        self.correct_pixel_size.setValidator(QDoubleValidator(0.1, 1000.0, 3))
+        self.correct_pixel_size.setToolTip(
+            "Optionally, select correct pixel size value that will be \n"
+            "used for all images. This is used only in case of .tif files when \n"
+            "pixel size value is not retrieved from image header.."
+        )
+
         self.mask_size = QLineEdit("150")
-        self.mask_size.setValidator(QIntValidator(5, 250))
+        self.mask_size.setValidator(QIntValidator(5, 100000))
         self.mask_size.setToolTip(
             "Select mask size in Angstrom. The mask size is used \n"
             "to draw mask/labels based on coordinates if name_maks.* \n"
@@ -286,7 +296,7 @@ class TardisWidget(QWidget):
         layout.addRow("Output Directory", self.output)
 
         layout.addRow("---- CNN Options ----", label_2)
-        layout.addRow("Patch Size", self.patch_size)
+        layout.addRow("Patch Size [px]", self.patch_size)
         layout.addRow("CNN type", self.cnn_type)
         layout.addRow("Image type", self.image_type)
         layout.addRow("No. of input channel", self.cnn_in_channel)
@@ -295,7 +305,8 @@ class TardisWidget(QWidget):
 
         layout.addRow("----- Extra --------", label_3)
         layout.addRow("Pixel Size [A]", self.pixel_size)
-        layout.addRow("Mask Size", self.mask_size)
+        layout.addRow("Correct Pixel Size [A]", self.correct_pixel_size)
+        layout.addRow("Mask Size [A]", self.mask_size)
         layout.addRow("Batch Size", self.batch_size)
         layout.addRow("No. of CNN layers", self.cnn_layers)
         layout.addRow("Channel scaler size", self.cnn_scaler)
@@ -328,13 +339,20 @@ class TardisWidget(QWidget):
         if pixel_size == "None":
             pixel_size = None
         else:
-            pixel_size = float(self.patch_size.currentText())
+            pixel_size = float(pixel_size)
+
+        correct_pixel_size = self.correct_pixel_size.text()
+        if correct_pixel_size == "None":
+            correct_pixel_size = None
+        else:
+            correct_pixel_size = float(correct_pixel_size)
 
         setup_environment_and_dataset(
             self.dir,
             int(self.mask_size.text()),
             pixel_size,
             int(self.patch_size.currentText()),
+            correct_pixel_size,
         )
 
         """Build training and test dataset 2D/3D"""
@@ -373,13 +391,14 @@ class TardisWidget(QWidget):
         conv_kernel = int(self.cnn_kernel.text())
         conv_padding = int(self.cnn_padding.text())
         pool_kernel = int(self.cnn_max_pool.text())
+
         if self.image_type.currentText() == "2D":
             cnn_structure = f"2{self.cnn_structure.text()}"
         else:
             cnn_structure = f"2{self.cnn_structure.text()}"
 
-        if self.checkpoint.text() != "None":
-            save_train = torch.load(self.checkpoint.text(), map_location="cpu")
+        if self.checkpoint_dir is not None:
+            save_train = torch.load(self.checkpoint_dir, map_location="cpu")
 
             if "model_struct_dict" in save_train.keys():
                 model_dict = save_train["model_struct_dict"]
@@ -406,6 +425,8 @@ class TardisWidget(QWidget):
                 "num_group": 8,
                 "prediction": False,
             }
+        else:
+            model_dict['img_size'] = patch_size
 
         self.structure = model_dict
         """Build CNN model"""
@@ -659,6 +680,14 @@ class TardisWidget(QWidget):
             f"...{filename[-17:]}/{self.cnn_type.currentText()}_checkpoints/"
         )
         self.output_folder = f"{filename}/{self.cnn_type.currentText()}_checkpoints/"
+
+    def update_checkpoint_dir(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            caption="Open File",
+            directory=os.getcwd(),
+        )
+        self.checkpoint.setText(filename[-30:])
+        self.checkpoint_dir = filename
 
     def show_validation(self, init_=False):
         """
