@@ -306,8 +306,8 @@ class TardisWidget(QWidget):
         layout.addRow("DIST threshold", self.dist_threshold)
         layout.addRow("Device", self.device)
 
-        layout.addRow("---- MT Filters -----", label_5)
-        layout.addRow("Filter MT length [A]", self.filter_by_length)
+        layout.addRow("---- Filament Filters -----", label_5)
+        layout.addRow("Filter filament length [A]", self.filter_by_length)
         layout.addRow("Connect splines within distance [A]", self.connect_splines)
         layout.addRow("Connect splines within diameter [A]", self.connect_cylinder)
 
