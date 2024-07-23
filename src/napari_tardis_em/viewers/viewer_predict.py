@@ -650,10 +650,16 @@ class TardisWidget(QWidget):
             else f"-ch {self.checkpoint_dir}_None "
         )
 
-        mv = (
-            ""
-            if self.model_version.currentText() == "None"
-            else f"-mv {int(self.model_version.currentText())} "
+        fi = (
+            "-fi True "
+            if bool(self.filament.checkState())
+            else ""
+        )
+
+        it = (
+            "-it 2d "
+            if self.image_type.currentText() == "2D"
+            else f"-it 3d "
         )
 
         cnn = (
@@ -676,57 +682,27 @@ class TardisWidget(QWidget):
             else ""
         )
 
-        ap = (
-            ""
-            if self.amira_prefix.text() == ".CorrelationLines"
-            else f"-ap {self.amira_prefix.text()} "
-        )
-        acd = (
-            ""
-            if self.amira_compare_distance.text() == "175"
-            else f"-acd {self.amira_compare_distance.text()} "
-        )
-        aip = (
-            ""
-            if self.amira_inter_probability.text() == "0.25"
-            else f"-aip {self.amira_inter_probability.text()} "
-        )
-
-        fl = (
-            ""
-            if self.filter_by_length.text() == "1000"
-            else f"-fl {int(self.filter_by_length.text())} "
-        )
-        cs = (
-            ""
-            if self.connect_splines.text() == "2500"
-            else f"-fl {int(self.connect_splines.text())} "
-        )
-        cc = (
-            ""
-            if self.connect_cylinder.text() == "250"
-            else f"-fl {int(self.connect_cylinder.text())} "
+        pv = (
+            f"-pv {int(self.points_in_patch.text())} "
+            if not self.points_in_patch.text() != "600"
+            else ""
         )
 
         show_info(
-            f"tardis_mt "
+            f"tardis_predict "
             f"-dir {self.out_} "
             f"{mask}"
             f"{px}"
+            f"{fi}"
+            f"{it}"
             f"{ch}"
-            f"{mv}"
             f"{cnn}"
             f"-out {self.output_formats} "
             f"-ps {int(self.patch_size.currentText())} "
             f"{rt}"
             f"{ct}"
             f"{dt}"
-            f"{ap}"
-            f"{acd}"
-            f"{aip}"
-            f"{fl}"
-            f"{cs}"
-            f"{cc}"
+            f"{pv}"
             f"-pv {int(self.points_in_patch.text())} "
             f"-dv {self.device.currentText()}"
         )
