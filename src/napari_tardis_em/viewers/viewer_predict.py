@@ -246,6 +246,7 @@ class TardisWidget(QWidget):
 
         self.export_command = QPushButton("Export command for high-throughput")
         self.export_command.setMinimumWidth(225)
+        self.export_command.clicked.connect(self.show_command)
 
         #################################
         # Optional Filament Filters #
@@ -722,21 +723,20 @@ class TardisWidget(QWidget):
             worker.start()
 
     def show_command(self):
-        mask = "" if not bool(self.mask.checkState()) else "-ms True"
+        ms = "" if not bool(self.mask.checkState()) else "-ms True"
 
-        correct_px = (
+        px = (
             ""
             if self.correct_px.text() == "None"
             else f"-px {float(self.correct_px.text())} "
         )
+
         if self.px is not None:
-            correct_px = (
+            px = (
                 ""
                 if self.px == float(self.correct_px.text())
                 else f"-px {float(self.correct_px.text())} "
             )
-
-        px = "" if not bool(self.mask.checkState()) else "-ms True "
 
         ch = (
             ""
@@ -777,7 +777,7 @@ class TardisWidget(QWidget):
         show_info(
             f"tardis_predict "
             f"-dir {self.out_} "
-            f"{mask}"
+            f"{ms}"
             f"{px}"
             f"{fi}"
             f"{it}"

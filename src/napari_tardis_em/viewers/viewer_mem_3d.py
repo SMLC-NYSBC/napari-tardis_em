@@ -231,6 +231,7 @@ class TardisWidget(QWidget):
 
         self.export_command = QPushButton("Export command for high-throughput")
         self.export_command.setMinimumWidth(225)
+        self.export_command.clicked.connect(self.show_command)
 
         """""" """""" """
            UI Setup
