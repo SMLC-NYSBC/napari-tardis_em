@@ -103,6 +103,7 @@ class TardisWidget(QWidget):
         self.output_instance = QComboBox()
         self.output_instance.addItems(["None", "csv", "npy", "amSG", "mrc"])
         self.output_instance.setToolTip("Select instance output format file.")
+        self.output_instance.setCurrentIndex(1)
 
         self.output_formats = (
             f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
@@ -189,7 +190,7 @@ class TardisWidget(QWidget):
             "false/positives. Higher value will result in cleaner output but may \n"
             "reduce recall."
         )
-        self.cnn_threshold.valueChanged.connect(self.update_dist_graph)
+        self.dist_threshold.valueChanged.connect(self.update_dist_graph)
 
         self.device = QComboBox()
         self.device.addItems(get_list_of_device())

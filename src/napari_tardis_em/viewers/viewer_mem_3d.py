@@ -103,6 +103,7 @@ class TardisWidget(QWidget):
         self.output_instance = QComboBox()
         self.output_instance.addItems(["None", "csv", "npy", "amSG", "stl", "mrc"])
         self.output_instance.setToolTip("Select instance output format file.")
+        self.output_instance.setCurrentIndex(1)
 
         self.output_formats = (
             f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"

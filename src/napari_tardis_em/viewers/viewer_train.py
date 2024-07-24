@@ -736,14 +736,23 @@ class TardisWidget(QWidget):
             )
 
     def show_command(self):
-        ps = ("" if self.patch_size.currentText() == "64"
-              else f"-ps {int(self.patch_size.currentText())} ")
+        ps = (
+            ""
+            if self.patch_size.currentText() == "64"
+            else f"-ps {int(self.patch_size.currentText())} "
+        )
 
-        px = ("" if self.pixel_size.text() == "None"
-              else f"-px {float(self.pixel_size.text())} ")
+        px = (
+            ""
+            if self.pixel_size.text() == "None"
+            else f"-px {float(self.pixel_size.text())} "
+        )
 
-        ms = ("" if not int(self.mask_size.text()) == 150
-              else f"-ms {int(self.mask_size.text())} ")
+        ms = (
+            ""
+            if not int(self.mask_size.text()) == 150
+            else f"-ms {int(self.mask_size.text())} "
+        )
 
         cnn = (
             ""
@@ -752,80 +761,87 @@ class TardisWidget(QWidget):
         )
 
         co = (
-            "" if int(self.cnn_out_channel.text()) == 1
+            ""
+            if int(self.cnn_out_channel.text()) == 1
             else f"-co {int(self.cnn_out_channel.text())} "
         )
 
         b = (
-            "" if int(self.batch_size.text()) == 25
+            ""
+            if int(self.batch_size.text()) == 25
             else f"-b {int(self.batch_size.text())} "
         )
 
         cl = (
-            "" if int(self.cnn_layers.text()) == 5
+            ""
+            if int(self.cnn_layers.text()) == 5
             else f"-cl {int(self.cnn_layers.text())} "
         )
 
         cm = (
-            "" if int(self.cnn_scaler.currentText()) == 32
+            ""
+            if int(self.cnn_scaler.currentText()) == 32
             else f"-cm {int(self.cnn_scaler.currentText())} "
         )
 
         if self.image_type.currentText() == "2D":
             cs = (
-                "" if self.cnn_structure.text() == "gcl"
+                ""
+                if self.cnn_structure.text() == "gcl"
                 else f"-cs 2{self.cnn_structure.text()} "
             )
         else:
             cs = (
-                "" if self.cnn_structure.text() == "gcl"
+                ""
+                if self.cnn_structure.text() == "gcl"
                 else f"-cs 3{self.cnn_structure.text()} "
             )
 
         ck = (
-            "" if int(self.cnn_kernel.text()) == 3
+            ""
+            if int(self.cnn_kernel.text()) == 3
             else f"-ck {int(self.cnn_kernel.text())} "
         )
 
         cp = (
-            "" if int(self.cnn_padding.text()) == 1
+            ""
+            if int(self.cnn_padding.text()) == 1
             else f"-cp {int(self.cnn_padding.text())} "
         )
 
         cmpk = (
-            "" if int(self.cnn_max_pool.text()) == 2
+            ""
+            if int(self.cnn_max_pool.text()) == 2
             else f"-cmpk {int(self.cnn_max_pool.text())} "
         )
 
         l = (
-            "" if self.loss_function.currentText() == "BCELoss"
+            ""
+            if self.loss_function.currentText() == "BCELoss"
             else f"-l {self.loss_function.currentText()} "
         )
 
         lr = (
-            "" if float(self.learning_rate.text()) == 0.0005
+            ""
+            if float(self.learning_rate.text()) == 0.0005
             else f"-lr {float(self.learning_rate.text())} "
         )
 
-        e = (
-            "" if int(self.epoch.text()) == 10000
-            else f"-e {int(self.epoch.text())} "
-        )
+        e = "" if int(self.epoch.text()) == 10000 else f"-e {int(self.epoch.text())} "
 
         es = (
-            "" if int(self.early_stop.text()) == 10000
+            ""
+            if int(self.early_stop.text()) == 10000
             else f"-es {int(self.early_stop.text())} "
         )
 
         dp = (
-            "" if float(self.dropout_rate.text()) == 0.5
+            ""
+            if float(self.dropout_rate.text()) == 0.5
             else f"-dp {float(self.dropout_rate.text())} "
         )
 
-        cch = (
-            "" if self.checkpoint_dir is None else
-            f"-cch {self.checkpoint_dir} "
-        )
+        cch = "" if self.checkpoint_dir is None else f"-cch {self.checkpoint_dir} "
 
         show_info(
             f"tardis_cnn_train "
