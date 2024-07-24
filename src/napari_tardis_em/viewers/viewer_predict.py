@@ -39,7 +39,7 @@ from tardis_em.utils.load_data import load_image
 from tardis_em.utils.normalization import adaptive_threshold
 from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.utils.setup_envir import clean_up
-
+from tardis_em.utils.spline_metric import sort_by_length
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import (
@@ -201,6 +201,7 @@ class TardisWidget(QWidget):
             "false/positives. Higher value will result in cleaner output but may \n"
             "reduce recall."
         )
+        self.dist_threshold.valueChanged.connect(self.update_dist_graph)
 
         self.device = QComboBox()
         self.device.addItems(get_list_of_device())
@@ -259,6 +260,8 @@ class TardisWidget(QWidget):
             "length in angstrom. All filaments shorter then this length \n"
             "will be deleted."
         )
+        self.filter_by_length.textChanged.connect(self.update_dist_graph)
+
         self.connect_splines = QLineEdit("None")
         self.connect_splines.setValidator(QIntValidator(0, 10000))
         self.connect_splines.setToolTip(
@@ -270,6 +273,7 @@ class TardisWidget(QWidget):
             "determines how far apart two filaments can be, while still being considered \n"
             "as a single unit if they are oriented in the same direction."
         )
+        self.connect_splines.textChanged.connect(self.update_dist_graph)
 
         self.connect_cylinder = QLineEdit("None")
         self.connect_cylinder.setValidator(QIntValidator(0, 10000))
@@ -281,6 +285,7 @@ class TardisWidget(QWidget):
             "The ends of these filaments must be located within this cylinder \n"
             "to be considered connected."
         )
+        self.connect_cylinder.textChanged.connect(self.update_dist_graph)
 
         """""" """""" """
            UI Setup
@@ -326,6 +331,118 @@ class TardisWidget(QWidget):
         self.filter_by_length.setText("1000")
         self.connect_splines.setText("2500")
         self.connect_cylinder.setText("250")
+
+    def update_checkpoint_dir(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            caption="Open File",
+            directory=getcwd(),
+        )
+        self.checkpoint.setText(filename[-30:])
+        self.checkpoint_dir = filename
+
+    def update_cnn_threshold(self):
+        if self.img is not None:
+            self.viewer.layers[self.dir.split("/")[-1]].visible = True
+
+            if float(self.cnn_threshold.text()) == 1.0:
+                self.img_threshold = adaptive_threshold(self.img).astype(np.uint8)
+            elif float(self.cnn_threshold.text()) == 0.0:
+                self.img_threshold = np.copy(self.img)
+            else:
+                self.img_threshold = np.where(
+                    self.img >= float(self.cnn_threshold.text()), 1, 0
+                ).astype(np.uint8)
+
+            create_image_layer(
+                self.viewer,
+                image=self.img_threshold,
+                name="Prediction",
+                transparency=True,
+                range_=(0, 1),
+            )
+
+            self.predictor.image = self.img_threshold
+            self.predictor.save_semantic_mask(self.dir.split("/")[-1])
+
+    def update_dist_layer(self):
+        self.predictor.image = self.img_threshold
+
+        if self.predictor.segments is not None:
+            create_point_layer(
+                viewer=self.viewer,
+                points=self.predictor.segments,
+                name="Predicted_Instances",
+                visibility=True,
+            )
+        else:
+            return
+
+        if self.predictor.segments_filter is not None:
+            create_point_layer(
+                viewer=self.viewer,
+                points=self.predictor.segments_filter,
+                name="Predicted_Instances_filter",
+                visibility=True,
+            )
+        else:
+            return
+
+    def update_dist_graph(self):
+        if self.predictor is not None:
+            if self.predictor.graphs is not None:
+                if bool(self.filament.checkState()):
+                    sort = True
+                    prune = 5
+                else:
+                    sort = False
+                    prune = 15
+
+                try:
+                    self.predictor.segments = (
+                        self.predictor.GraphToSegment.patch_to_segment(
+                            graph=self.predictor.graphs,
+                            coord=self.predictor.pc_ld,
+                            idx=self.predictor.output_idx,
+                            sort=sort,
+                            prune=prune,
+                        )
+                    )
+                    self.predictor.segments = sort_by_length(self.predictor.segments)
+                except:
+                    self.predictor.segments = None
+
+                if self.predictor.segments is None:
+                    show_info("TARDIS-em could not find any instances :(")
+                    return
+                else:
+                    show_info(
+                        f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)"
+                    )
+                    self.predictor.save_instance_PC(self.dir.split("/")[-1])
+
+    def calculate_position(self, name):
+        patch_size = int(self.patch_size.currentText())
+        name = name.split("_")
+        name = {
+            "z": int(name[1]),
+            "y": int(name[2]),
+            "x": int(name[3]),
+            "stride": int(name[4]),
+        }
+
+        x_start = (name["x"] * patch_size) - (name["x"] * name["stride"])
+        x_end = x_start + patch_size
+        name["x"] = [x_start, x_end]
+
+        y_start = (name["y"] * patch_size) - (name["y"] * name["stride"])
+        y_end = y_start + patch_size
+        name["y"] = [y_start, y_end]
+
+        z_start = (name["z"] * patch_size) - (name["z"] * name["stride"])
+        z_end = z_start + patch_size
+        name["z"] = [z_start, z_end]
+
+        return name
 
     def load_directory(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -525,10 +642,10 @@ class TardisWidget(QWidget):
                     self.img = self.predictor.image_stitcher(
                         image_dir=self.predictor.output, mask=False, dtype=np.float32
                     )[
-                               : self.predictor.scale_shape[0],
-                               : self.predictor.scale_shape[1],
-                               : self.predictor.scale_shape[2],
-                               ]
+                        : self.predictor.scale_shape[0],
+                        : self.predictor.scale_shape[1],
+                        : self.predictor.scale_shape[2],
+                    ]
                 self.img, _ = scale_image(
                     image=self.img, scale=self.predictor.org_shape
                 )
@@ -539,29 +656,6 @@ class TardisWidget(QWidget):
 
             worker = predict_dataset(img_dataset, self.predictor)
             worker.start()
-        else:
-            return
-
-    def update_dist_layer(self):
-        self.predictor.image = self.img_threshold
-
-        if self.predictor.segments is not None:
-            create_point_layer(
-                viewer=self.viewer,
-                points=self.predictor.segments,
-                name="Predicted_Instances",
-                visibility=True,
-            )
-        else:
-            return
-
-        if self.predictor.segments_filter is not None:
-            create_point_layer(
-                viewer=self.viewer,
-                points=self.predictor.segments_filter,
-                name="Predicted_Instances_filter",
-                visibility=True,
-            )
         else:
             return
 
@@ -650,17 +744,9 @@ class TardisWidget(QWidget):
             else f"-ch {self.checkpoint_dir}_None "
         )
 
-        fi = (
-            "-fi True "
-            if bool(self.filament.checkState())
-            else ""
-        )
+        fi = "-fi True " if bool(self.filament.checkState()) else ""
 
-        it = (
-            "-it 2d "
-            if self.image_type.currentText() == "2D"
-            else f"-it 3d "
-        )
+        it = "-it 2d " if self.image_type.currentText() == "2D" else f"-it 3d "
 
         cnn = (
             ""
@@ -706,59 +792,3 @@ class TardisWidget(QWidget):
             f"-pv {int(self.points_in_patch.text())} "
             f"-dv {self.device.currentText()}"
         )
-
-    def update_cnn_threshold(self):
-        if self.img is not None:
-            self.viewer.layers[self.dir.split("/")[-1]].visible = True
-
-            if float(self.cnn_threshold.text()) == 1.0:
-                self.img_threshold = adaptive_threshold(self.img).astype(np.uint8)
-            elif float(self.cnn_threshold.text()) == 0.0:
-                self.img_threshold = np.copy(self.img)
-            else:
-                self.img_threshold = np.where(
-                    self.img >= float(self.cnn_threshold.text()), 1, 0
-                ).astype(np.uint8)
-
-            create_image_layer(
-                self.viewer,
-                image=self.img_threshold,
-                name="Prediction",
-                transparency=True,
-                range_=(0, 1),
-            )
-
-            self.predictor.image = self.img_threshold
-            self.predictor.save_semantic_mask(self.dir.split("/")[-1])
-
-    def calculate_position(self, name):
-        patch_size = int(self.patch_size.currentText())
-        name = name.split("_")
-        name = {
-            "z": int(name[1]),
-            "y": int(name[2]),
-            "x": int(name[3]),
-            "stride": int(name[4]),
-        }
-
-        x_start = (name["x"] * patch_size) - (name["x"] * name["stride"])
-        x_end = x_start + patch_size
-        name["x"] = [x_start, x_end]
-
-        y_start = (name["y"] * patch_size) - (name["y"] * name["stride"])
-        y_end = y_start + patch_size
-        name["y"] = [y_start, y_end]
-
-        z_start = (name["z"] * patch_size) - (name["z"] * name["stride"])
-        z_end = z_start + patch_size
-        name["z"] = [z_start, z_end]
-
-        return name
-
-    def update_checkpoint_dir(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            caption="Open File",
-            directory=getcwd(),
-        )
-        self.checkpoint.setText(filename[-30:])
-        self.checkpoint_dir = filename

@@ -40,7 +40,7 @@ contributions:
       title: Predict Microtubules 3D
 
 #    - id: napari-tardis-em.viewer_mt_2d
-#      python_name: napari_tardis_em.viewers.viewer_mt_3d:TardisWidget
+#      python_name: napari_tardis_em.viewers.viewer_mt_2d:TardisWidget
 #      title: Predict Microtubules 2D
 
     # Membrane
@@ -49,7 +49,7 @@ contributions:
       title: Predict Membrane 3D
 
     - id: napari-tardis-em.viewer_mem_2d
-      python_name: napari_tardis_em.viewers.viewer_mt_2d:TardisWidget
+      python_name: napari_tardis_em.viewers.viewer_mem_2d:TardisWidget
       title: Predict Microtubules 2D
 
 #    # Actin

@@ -73,9 +73,12 @@ def update_viewer_prediction(viewer, image: np.ndarray, position: dict):
             position["x"][1] = position["x"][0] + diff[1]
 
             img.data[
-            position["y"][0]: position["y"][1],
-            position["x"][0]: position["x"][1],
-            ] = image[: diff[0], : diff[1],]
+                position["y"][0] : position["y"][1],
+                position["x"][0] : position["x"][1],
+            ] = image[
+                : diff[0],
+                : diff[1],
+            ]
     viewer.layers["Prediction"].visible = False
     viewer.layers["Prediction"].visible = True
 
@@ -101,7 +104,7 @@ def create_point_layer(
         pass
 
     point_features = {
-        "confidence": tuple(points[:, 0].flatten()*np.random.randint(100)),
+        "confidence": tuple(points[:, 0].flatten() * np.random.randint(100)),
     }
     points = np.array(points[:, 1:])
 
@@ -111,11 +114,7 @@ def create_point_layer(
         points = np.hstack((points, z))
 
     # Convert xyz to zyx
-    points = np.vstack((
-        points[:, 2],
-        points[:, 1],
-        points[:, 0]
-    )).T
+    points = np.vstack((points[:, 2], points[:, 1], points[:, 0])).T
     viewer.layers.select_all()
     viewer.layers.toggle_selected_visibility()
 
@@ -198,7 +197,9 @@ def create_image_layer(
         viewer.layers[name].visible = False
 
 
-def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size, correct_pixel_size=None):
+def setup_environment_and_dataset(
+    dir_, mask_size, pixel_size, patch_size, correct_pixel_size=None
+):
     """Set environment"""
     TRAIN_IMAGE_DIR = join(dir_, "train", "imgs")
     TRAIN_MASK_DIR = join(dir_, "train", "masks")
@@ -213,7 +214,13 @@ def setup_environment_and_dataset(dir_, mask_size, pixel_size, patch_size, corre
         img_format=IMG_FORMAT,
         test_img=TEST_IMAGE_DIR,
         test_mask=TEST_MASK_DIR,
-        mask_format=("_mask.am", ".CorrelationLines.am", "_mask.mrc", "_mask.tif", "_mask.csv"),
+        mask_format=(
+            "_mask.am",
+            ".CorrelationLines.am",
+            "_mask.mrc",
+            "_mask.tif",
+            "_mask.csv",
+        ),
     )
 
     """Optionally: Set-up environment if not existing"""

@@ -426,7 +426,7 @@ class TardisWidget(QWidget):
                 "prediction": False,
             }
         else:
-            model_dict['img_size'] = patch_size
+            model_dict["img_size"] = patch_size
 
         self.structure = model_dict
         """Build CNN model"""
