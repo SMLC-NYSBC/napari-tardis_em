@@ -261,3 +261,27 @@ def setup_environment_and_dataset(
 
         no_dataset = int(len([f for f in listdir(dir_) if f.endswith(IMG_FORMAT)]) / 2)
         build_test_dataset(dataset_dir=dir_, dataset_no=no_dataset)
+
+
+def calculate_position(patch_size, name):
+    name = name.split("_")
+    name = {
+        "z": int(name[1]),
+        "y": int(name[2]),
+        "x": int(name[3]),
+        "stride": int(name[4]),
+    }
+
+    x_start = (name["x"] * patch_size) - (name["x"] * name["stride"])
+    x_end = x_start + patch_size
+    name["x"] = [x_start, x_end]
+
+    y_start = (name["y"] * patch_size) - (name["y"] * name["stride"])
+    y_end = y_start + patch_size
+    name["y"] = [y_start, y_end]
+
+    z_start = (name["z"] * patch_size) - (name["z"] * name["stride"])
+    z_end = z_start + patch_size
+    name["z"] = [z_start, z_end]
+
+    return name

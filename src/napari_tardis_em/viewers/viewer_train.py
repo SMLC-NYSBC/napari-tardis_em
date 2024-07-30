@@ -556,9 +556,10 @@ class TardisWidget(QWidget):
                 progress={"desc": f"Validation-{self.cnn_type.currentText()}"},
                 connect={"finished": self.show_validation},
             )
-            def _validate():
+            def _validate(model):
                 self.first_25_m = []
                 self.img_indexes = []
+                model.eval()
 
                 loss_ = []
                 f1_s = []
@@ -570,7 +571,7 @@ class TardisWidget(QWidget):
                         self.device.currentText()
                     )
                     with torch.no_grad():
-                        img = self.model(img)
+                        img = model(img)
                         loss = self.loss_fn(img, mask)
                         loss_.append(loss.item())
 
@@ -588,7 +589,7 @@ class TardisWidget(QWidget):
                         self.first_25_m.append(img)
                 yield
 
-                self.scores.append(np.mean(f1))
+                self.scores.append(np.mean(f1_s))
                 self.validation_loss.append(np.mean(loss_))
 
             def _mid_training_eval(idx):
@@ -599,7 +600,7 @@ class TardisWidget(QWidget):
                         # Do not validate at first idx and last 10%
                         if idx != 0 and idx <= int(len(self.train_DL) * 0.75):
                             self.model.eval()  # Enter Validation
-                            worker = _validate()
+                            worker = _validate(self.model)
                             worker.start()
                             _save_metric()
 
@@ -618,7 +619,7 @@ class TardisWidget(QWidget):
                 if self.test_DL is not None and self.id_ != 0:
                     self.model.eval()
 
-                    worker = _validate()
+                    worker = _validate(self.model)
                     worker.start()
 
                 self.model.train()

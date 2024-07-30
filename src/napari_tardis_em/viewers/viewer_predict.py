@@ -32,20 +32,19 @@ from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info, show_error
 
 from tardis_em.cnn.data_processing.scaling import scale_image
-from tardis_em.cnn.data_processing.trim import trim_with_stride
-from tardis_em.cnn.datasets.dataloader import PredictionDataset
-from tardis_em.utils.aws import get_all_version_aws
 from tardis_em.utils.load_data import load_image
-from tardis_em.utils.normalization import adaptive_threshold
-from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.utils.setup_envir import clean_up
-from tardis_em.utils.spline_metric import sort_by_length
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import (
     create_image_layer,
     update_viewer_prediction,
-    create_point_layer,
+    calculate_position,
+)
+from napari_tardis_em.viewers.viewer_utils import (
+    _update_cnn_threshold,
+    _update_dist_layer,
+    _update_dist_graph, semantic_preprocess,
 )
 
 
@@ -344,23 +343,8 @@ class TardisWidget(QWidget):
 
     def update_cnn_threshold(self):
         if self.img is not None:
-            self.viewer.layers[self.dir.split("/")[-1]].visible = True
-
-            if float(self.cnn_threshold.text()) == 1.0:
-                self.img_threshold = adaptive_threshold(self.img).astype(np.uint8)
-            elif float(self.cnn_threshold.text()) == 0.0:
-                self.img_threshold = np.copy(self.img)
-            else:
-                self.img_threshold = np.where(
-                    self.img >= float(self.cnn_threshold.text()), 1, 0
-                ).astype(np.uint8)
-
-            create_image_layer(
-                self.viewer,
-                image=self.img_threshold,
-                name="Prediction",
-                transparency=True,
-                range_=(0, 1),
+            self.img_threshold = _update_cnn_threshold(
+                self.viewer, self.dir, self.img, float(self.cnn_threshold.text())
             )
 
             self.predictor.image = self.img_threshold
@@ -369,49 +353,21 @@ class TardisWidget(QWidget):
     def update_dist_layer(self):
         self.predictor.image = self.img_threshold
 
-        if self.predictor.segments is not None:
-            create_point_layer(
-                viewer=self.viewer,
-                points=self.predictor.segments,
-                name="Predicted_Instances",
-                visibility=True,
-            )
-        else:
-            return
-
-        if self.predictor.segments_filter is not None:
-            create_point_layer(
-                viewer=self.viewer,
-                points=self.predictor.segments_filter,
-                name="Predicted_Instances_filter",
-                visibility=True,
-            )
-        else:
-            return
+        _update_dist_layer(
+            self.viewer, self.predictor.segments, self.predictor.segments_filter
+        )
 
     def update_dist_graph(self):
         if self.predictor is not None:
             if self.predictor.graphs is not None:
-                if bool(self.filament.checkState()):
-                    sort = True
-                    prune = 5
-                else:
-                    sort = False
-                    prune = 15
-
-                try:
-                    self.predictor.segments = (
-                        self.predictor.GraphToSegment.patch_to_segment(
-                            graph=self.predictor.graphs,
-                            coord=self.predictor.pc_ld,
-                            idx=self.predictor.output_idx,
-                            sort=sort,
-                            prune=prune,
-                        )
-                    )
-                    self.predictor.segments = sort_by_length(self.predictor.segments)
-                except:
-                    self.predictor.segments = None
+                self.predictor.segments = _update_dist_graph(
+                    bool(self.filament.checkState()),
+                    self.predictor.segments,
+                    self.predictor.GraphToSegment,
+                    self.predictor.graphs,
+                    self.predictor.pc_ld,
+                    self.predictor.output_idx,
+                )
 
                 if self.predictor.segments is None:
                     show_info("TARDIS-em could not find any instances :(")
@@ -421,30 +377,6 @@ class TardisWidget(QWidget):
                         f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)"
                     )
                     self.predictor.save_instance_PC(self.dir.split("/")[-1])
-
-    def calculate_position(self, name):
-        patch_size = int(self.patch_size.currentText())
-        name = name.split("_")
-        name = {
-            "z": int(name[1]),
-            "y": int(name[2]),
-            "x": int(name[3]),
-            "stride": int(name[4]),
-        }
-
-        x_start = (name["x"] * patch_size) - (name["x"] * name["stride"])
-        x_end = x_start + patch_size
-        name["x"] = [x_start, x_end]
-
-        y_start = (name["y"] * patch_size) - (name["y"] * name["stride"])
-        y_end = y_start + patch_size
-        name["y"] = [y_start, y_end]
-
-        z_start = (name["z"] * patch_size) - (name["z"] * name["stride"])
-        z_end = z_start + patch_size
-        name["z"] = [z_start, z_end]
-
-        return name
 
     def load_directory(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -489,134 +421,42 @@ class TardisWidget(QWidget):
         self.output_folder = f"{filename}/Predictions/"
 
     def predict_semantic(self):
-        """Pre-settings"""
-
-        if self.correct_px.text() == "None":
-            correct_px = None
-        else:
-            correct_px = float(self.correct_px.text())
-
-        msg = (
-            f"Predicted file is without pixel size metadate {correct_px}."
-            "Please correct correct_px argument with a correct pixel size value."
-        )
-        if correct_px is None:
-            show_error(msg)
-            return
-
-        self.output_formats = (
-            f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
-        )
-
-        if self.output_instance.currentText() == "None":
-            instances = False
-        else:
-            instances = True
-
-        cnn_threshold = (
-            "auto"
-            if float(self.cnn_threshold.text()) == 1.0
-            else self.cnn_threshold.text()
-        )
-
         if bool(self.filament.checkState()):
             self.predict_type = "General_filament"
         else:
             self.predict_type = "General_object"
 
-        filter_by_length = self.filter_by_length.text()
-        connect_splines = self.connect_splines.text()
-        connect_cylinder = self.connect_cylinder.text()
-        if filter_by_length == "None":
-            filter_by_length = None
-        else:
-            filter_by_length = int(self.filter_by_length.text())
-        if connect_splines == "None":
-            connect_splines = None
-        else:
-            connect_splines = int(connect_splines)
-        if connect_cylinder == "None":
-            connect_cylinder = None
-        else:
-            connect_cylinder = int(connect_cylinder)
-
-        self.predictor = GeneralPredictor(
-            predict=self.predict_type,
-            dir_=self.dir,
-            binary_mask=bool(self.mask.checkState()),
-            correct_px=correct_px,
-            normalize_px=(
-                None
-                if self.normalize_px.text() == "None"
-                else float(self.normalize_px.text())
-            ),
-            convolution_nn=self.cnn_type.currentText(),
-            checkpoint=[
-                None if self.checkpoint.text() == "None" else self.checkpoint_dir,
-                None,
-            ],
-            output_format=self.output_formats,
-            patch_size=int(self.patch_size.currentText()),
-            cnn_threshold=cnn_threshold,
-            dist_threshold=float(self.dist_threshold.text()),
-            points_in_patch=int(self.points_in_patch.text()),
-            predict_with_rotation=bool(self.rotate.checkState()),
-            filter_by_length=filter_by_length,
-            connect_splines=connect_splines,
-            connect_cylinder=connect_cylinder,
-            instances=instances,
-            device_=self.device.currentText(),
-            debug=False,
-            tardis_logo=False,
+        self.output_formats, self.predictor, self.scale_shape, img_dataset = semantic_preprocess(
+            self.viewer,
+            self.dir,
+            self.output_semantic.currentText(),
+            self.output_instance.currentText(),
+            {
+                "correct_px": self.correct_px.text(),
+                "cnn_threshold": float(self.cnn_threshold.text()),
+                "dist_threshold": float(self.dist_threshold.text()),
+                "model_version": self.model_version.currentText(),
+                "predict_type": self.predict_type,
+                "mask": bool(self.mask.checkState()),
+                "cnn_type": self.cnn_type.currentText(),
+                "checkpoint": [None if self.checkpoint.text() == "None" else self.checkpoint_dir,
+                               None],
+                "patch_size": int(self.patch_size.currentText()),
+                "points_in_patch": int(self.points_in_patch.text()),
+                "rotate": bool(self.rotate.checkState()),
+                "amira_prefix": None,
+                "filter_by_length": self.filter_by_length.text(),
+                "connect_splines": self.connect_splines.text(),
+                "connect_cylinder": self.connect_cylinder.text(),
+                "amira_compare_distance": None,
+                "amira_inter_probability": None,
+                "device": self.device.currentText(),
+                "image_type": self.image_type.currentText()
+            }
         )
-        self.predictor.in_format = len(self.dir.split(".")[-1]) + 1
 
-        self.predictor.get_file_list()
-        self.predictor.create_headers()
-        self.predictor.load_data(id_name=self.predictor.predict_list[0])
-
-        if self.image_type.currentText() == "2D":
-            self.predictor.expect_2d = True
-            self.predictor.cnn._2d = True
-        else:
-            self.predictor.expect_2d = False
-            self.predictor.cnn._2d = False
 
         if not bool(self.mask.checkState()):
-            trim_with_stride(
-                image=self.predictor.image,
-                scale=self.predictor.scale_shape,
-                trim_size_xy=self.predictor.patch_size,
-                trim_size_z=self.predictor.patch_size,
-                output=join(self.predictor.dir, "temp", "Patches"),
-                image_counter=0,
-                clean_empty=False,
-                stride=round(self.predictor.patch_size * 0.125),
-            )
-
-            create_image_layer(
-                self.viewer,
-                image=self.predictor.image,
-                name=self.dir.split("/")[-1],
-                range_=(np.min(self.predictor.image), np.max(self.predictor.image)),
-                visibility=False,
-                transparency=False,
-            )
-
-            create_image_layer(
-                self.viewer,
-                image=np.zeros(self.predictor.scale_shape, dtype=np.float32),
-                name="Prediction",
-                transparency=True,
-                range_=None,
-            )
-
-            self.scale_shape = self.predictor.scale_shape
-
-            img_dataset = PredictionDataset(
-                join(self.predictor.dir, "temp", "Patches", "imgs")
-            )
-
             @thread_worker(
                 start_thread=False,
                 progress={"desc": "semantic-segmentation-progress"},
@@ -628,7 +468,9 @@ class TardisWidget(QWidget):
 
                     input_ = predictor.predict_cnn_napari(input_, name)
                     update_viewer_prediction(
-                        self.viewer, input_, self.calculate_position(name)
+                        self.viewer,
+                        input_,
+                        calculate_position(int(self.patch_size.currentText()), name),
                     )
 
                 show_info("Finished Semantic Prediction !")
