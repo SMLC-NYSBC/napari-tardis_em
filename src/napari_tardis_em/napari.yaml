@@ -11,10 +11,10 @@ name: napari-tardis-em
 display_name: TARDIS-em napari plugin
 contributions:
   commands:
-    # Read/Write files Images
-#    - id: napari-tardis_em.import_data
-#      python_name: napari-tardis_em.utils.import_data:load_images
-#      title: Open micrograph|tomogram
+#     Read/Write files Images
+    - id: napari-tardis-em.import_data
+      python_name: napari_tardis_em.readers.import_data:napari_get_reader
+      title: Open segmented point cloud from TARDIS
 #
 #    - id: napari-tardis_em.export_image
 #      python_name: napari-tardis_em.utils.export_data:export_images
@@ -39,6 +39,10 @@ contributions:
       python_name: napari_tardis_em.viewers.viewer_mt_3d:TardisWidget
       title: Predict Microtubules 3D
 
+    - id: napari-tardis-em.viewer_mt_tirf
+      python_name: napari_tardis_em.viewers.viewer_mt_tirf:TardisWidget
+      title: Predict Microtubules TIRF
+
 #    - id: napari-tardis-em.viewer_mt_2d
 #      python_name: napari_tardis_em.viewers.viewer_mt_2d:TardisWidget
 #      title: Predict Microtubules 2D
@@ -57,10 +61,15 @@ contributions:
       python_name: napari_tardis_em.viewers.viewer_actin_3d:TardisWidget
       title: Predict Actin 3D
 
-#  readers:
-#    - command: napari_tardis_em.import_data
-#      accepts_directories: False
-#      filename_patterns: ['*.mrc', '*.rec', '*.tiff', '*.tif', '*.am']
+#    # Analysis
+#    - id: napari-tardis-em.viewer_analysis_fibers
+#      python_name: napari_tardis_em.viewers.viewer_analysis_fibers:TardisWidget
+#      title: Fiber analysis
+
+  readers:
+    - command: napari-tardis-em.import_data
+      accepts_directories: False
+      filename_patterns: ['*.mrc', '*.rec', '*.tif', '*.tiff', '*.nd2', '*.csv']
 
 #  writers:
 #    - command: napari_tardis_em.export_image
@@ -82,6 +91,9 @@ contributions:
     - command: napari-tardis-em.viewer_mt_3d
       display_name: Predict Microtubules 3D
 
+    - command: napari-tardis-em.viewer_mt_tirf
+      display_name: Predict Microtubules TIRF
+
 #    - command: napari-tardis-em.viewer_mt_2d
 #      display_name: Predict Microtubules 2D
 
@@ -95,3 +107,7 @@ contributions:
 #    # Actin
     - command: napari-tardis-em.viewer_actin_3d
       display_name: Predict Actin 3D
+
+#    # Analysis
+#    - command: napari-tardis-em.viewer_analysis_fibers
+#      display_name: Fiber analysis

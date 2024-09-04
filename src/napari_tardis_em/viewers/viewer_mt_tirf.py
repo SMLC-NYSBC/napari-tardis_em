@@ -8,7 +8,6 @@
 #  MIT License 2024                                                   #
 #######################################################################
 from os import getcwd
-from os.path import join
 
 import numpy as np
 import torch
@@ -34,6 +33,7 @@ from napari.utils.notifications import show_info, show_error
 from tardis_em.cnn.data_processing.scaling import scale_image
 from tardis_em.utils.load_data import load_image
 from tardis_em.utils.setup_envir import clean_up
+
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import (
@@ -45,6 +45,7 @@ from napari_tardis_em.viewers.viewer_utils import (
     _update_cnn_threshold,
     _update_dist_layer,
     _update_dist_graph,
+    _update_versions,
     semantic_preprocess,
 )
 
@@ -57,11 +58,10 @@ class TardisWidget(QWidget):
     user-friendly, this plugin guid user what to do, and during training display
      results from validation loop.
     """
-
-    def __init__(self, viewer_predict: Viewer):
+    def __init__(self, viewer_mt_tirf: Viewer):
         super().__init__()
 
-        self.viewer = viewer_predict
+        self.viewer = viewer_mt_tirf
 
         self.predictor = None
         self.img_threshold, self.scale_shape = None, None
@@ -77,7 +77,7 @@ class TardisWidget(QWidget):
             "Select directory with image or single file you would like to predict. \n "
             "\n"
             "Supported formats:\n"
-            "images: *.mrc, *.rec, *.map, *.am, *.tif"
+            "images: *.mrc, *.rec, *.map, *.am, *.tif, *nd2"
         )
         self.directory.clicked.connect(self.load_directory)
         self.dir = getcwd()
@@ -112,40 +112,25 @@ class TardisWidget(QWidget):
         # Setting user may change #
         ###########################
         label_3 = QLabel("Setting user may change             ")
-        label_3.setStyleSheet(border_style("yellow"))
+        label_3.setStyleSheet(border_style("red"))
 
-        self.filament = QCheckBox()
-        self.filament.setCheckState(Qt.CheckState.Unchecked)
-        self.filament.setToolTip(
-            "Define if you you want to predict filament like structure of object."
-        )
-        self.filament.clicked.connect(self.update_filament_setting)
-
-        self.image_type = QComboBox()
-        self.image_type.addItems(["2D", "3D"])
-        self.image_type.setCurrentIndex(1)
-        self.image_type.setToolTip(
-            "Select type of images you would like to train CNN model on."
-        )
-
-        self.mask = QCheckBox()
-        self.mask.setCheckState(Qt.CheckState.Unchecked)
-        self.mask.setToolTip(
-            "Define if you input tomograms images or binary mask \n"
-            "with pre segmented filament/object."
-        )
-
-        self.correct_px = QLineEdit("None")
-        self.correct_px.setValidator(QDoubleValidator(0.00, 100.00, 3))
-        self.correct_px.setToolTip(
-            "Set correct pixel size value, if image header \n"
-            "do not contain or stores incorrect information."
+        self.points_in_patch = QLineEdit("600")
+        self.points_in_patch.setValidator(QDoubleValidator(100, 10000, 1))
+        self.points_in_patch.setToolTip(
+            "Number of point in patch. Higher number will increase how may points \n"
+            "DIST model will process at the time. This is usually only the memory GPU constrain."
         )
 
         self.cnn_type = QComboBox()
         self.cnn_type.addItems(["unet", "resnet", "unet3plus", "fnet", "fnet_attn"])
         self.cnn_type.setCurrentIndex(4)
         self.cnn_type.setToolTip("Select type of CNN you would like to train.")
+        self.cnn_type.currentIndexChanged.connect(self.update_versions)
+
+        self.model_version = QComboBox()
+        self.model_version.addItems(["None"])
+        self.update_versions()
+        self.model_version.setToolTip("Optional version of the model from 1 to inf.")
 
         self.checkpoint = QPushButton("None")
         self.checkpoint.setToolTip(
@@ -178,7 +163,7 @@ class TardisWidget(QWidget):
         self.cnn_threshold.setMinimum(0)
         self.cnn_threshold.setMaximum(1)
         self.cnn_threshold.setSingleStep(0.01)
-        self.cnn_threshold.setValue(0.50)
+        self.cnn_threshold.setValue(0.25)
         self.cnn_threshold.setToolTip(
             "Threshold value for binary prediction. Lower value will increase \n"
             "recall [retrieve more of predicted object] but also may increase \n"
@@ -214,23 +199,6 @@ class TardisWidget(QWidget):
         ########################################
         # Setting user is not advice to change #
         ########################################
-        label_4 = QLabel("Setting user is not advice to change")
-        label_4.setStyleSheet(border_style("red"))
-
-        self.normalize_px = QLineEdit("None")
-        self.normalize_px.setValidator(QDoubleValidator(1, 10000, 3))
-        self.normalize_px.setToolTip(
-            "Optionally, if select normalization pixel size value if you specified it"
-            "during your CNN training."
-        )
-
-        self.points_in_patch = QLineEdit("600")
-        self.points_in_patch.setValidator(QDoubleValidator(100, 10000, 1))
-        self.points_in_patch.setToolTip(
-            "Number of point in patch. Higher number will increase how may points \n"
-            "DIST model will process at the time. This is usually only the memory GPU constrain."
-        )
-
         label_run = QLabel("Start Prediction                 ")
         label_run.setStyleSheet(border_style("blue"))
 
@@ -250,37 +218,37 @@ class TardisWidget(QWidget):
         self.export_command.clicked.connect(self.show_command)
 
         #################################
-        # Optional Filament Filters #
+        # Optional Microtubules Filters #
         #################################
-        label_5 = QLabel("Optional Filament Filters      ")
-        label_5.setStyleSheet(border_style("orange"))
+        label_4 = QLabel("Optional Microtubules Filters      ")
+        label_4.setStyleSheet(border_style("orange"))
 
-        self.filter_by_length = QLineEdit("None")
+        self.filter_by_length = QLineEdit("1000")
         self.filter_by_length.setValidator(QIntValidator(0, 10000))
         self.filter_by_length.setToolTip(
-            "Filtering parameters for filament, defining maximum filament \n"
+            "Filtering parameters for microtubules, defining maximum microtubule \n"
             "length in angstrom. All filaments shorter then this length \n"
             "will be deleted."
         )
         self.filter_by_length.textChanged.connect(self.update_dist_graph)
 
-        self.connect_splines = QLineEdit("None")
+        self.connect_splines = QLineEdit("2500")
         self.connect_splines.setValidator(QIntValidator(0, 10000))
         self.connect_splines.setToolTip(
-            "To address the issue where filament are mistakenly \n"
+            "To address the issue where microtubules are mistakenly \n"
             "identified as two different filaments, we use a filtering technique. \n"
             "This involves identifying the direction each filament end points towards and then \n"
             "linking any filaments that are facing the same direction and are within \n"
             "a certain distance from each other, measured in angstroms. This distance threshold \n"
-            "determines how far apart two filaments can be, while still being considered \n"
+            "determines how far apart two microtubules can be, while still being considered \n"
             "as a single unit if they are oriented in the same direction."
         )
         self.connect_splines.textChanged.connect(self.update_dist_graph)
 
-        self.connect_cylinder = QLineEdit("None")
+        self.connect_cylinder = QLineEdit("250")
         self.connect_cylinder.setValidator(QIntValidator(0, 10000))
         self.connect_cylinder.setToolTip(
-            "To minimize false positives when linking filaments, we limit \n"
+            "To minimize false positives when linking microtubules, we limit \n"
             "the search area to a cylindrical radius specified in angstroms. \n"
             "For each spline, we find the direction the filament end is pointing in \n"
             "and look for another filament that is oriented in the same direction. \n"
@@ -301,26 +269,20 @@ class TardisWidget(QWidget):
         layout.addRow("Instance output", self.output_instance)
 
         layout.addRow("----- Extra --------", label_3)
-        layout.addRow("Predict filament", self.filament)
-        layout.addRow("Image type", self.image_type)
-        layout.addRow("Input as a mask", self.mask)
-        layout.addRow("Correct pixel size", self.correct_px)
         layout.addRow("CNN type", self.cnn_type)
+        layout.addRow("Model Version", self.model_version)
         layout.addRow("Checkpoint", self.checkpoint)
         layout.addRow("Patch size", self.patch_size)
         layout.addRow("Rotation", self.rotate)
         layout.addRow("CNN threshold", self.cnn_threshold)
         layout.addRow("DIST threshold", self.dist_threshold)
         layout.addRow("Device", self.device)
+        layout.addRow("No. of points [DIST]", self.points_in_patch)
 
-        layout.addRow("---- Filament Filters -----", label_5)
-        layout.addRow("Filter filament length [A]", self.filter_by_length)
+        layout.addRow("---- MT Filters -----", label_4)
+        layout.addRow("Filter MT length [A]", self.filter_by_length)
         layout.addRow("Connect splines within distance [A]", self.connect_splines)
         layout.addRow("Connect splines within diameter [A]", self.connect_cylinder)
-
-        layout.addRow("---- Advance -------", label_4)
-        layout.addRow("Normalization pixel size [A]", self.normalize_px)
-        layout.addRow("No. of points [DIST]", self.points_in_patch)
 
         layout.addRow("---- Run Prediction -----", label_run)
         layout.addRow("", self.predict_1_button)
@@ -329,11 +291,6 @@ class TardisWidget(QWidget):
 
         self.setLayout(layout)
 
-    def update_filament_setting(self):
-        self.filter_by_length.setText("1000")
-        self.connect_splines.setText("2500")
-        self.connect_cylinder.setText("250")
-
     def update_checkpoint_dir(self):
         filename, _ = QFileDialog.getOpenFileName(
             caption="Open File",
@@ -341,6 +298,11 @@ class TardisWidget(QWidget):
         )
         self.checkpoint.setText(filename[-30:])
         self.checkpoint_dir = filename
+
+    def update_versions(self):
+        self.model_version = _update_versions(
+            self.model_version, self.cnn_type.currentText(), "microtubules_tirf"
+        )
 
     def update_cnn_threshold(self):
         if self.img is not None:
@@ -422,11 +384,6 @@ class TardisWidget(QWidget):
         self.output_folder = f"{filename}/Predictions/"
 
     def predict_semantic(self):
-        if bool(self.filament.checkState()):
-            self.predict_type = "General_filament"
-        else:
-            self.predict_type = "General_object"
-
         self.output_formats, self.predictor, self.scale_shape, img_dataset = (
             semantic_preprocess(
                 self.viewer,
@@ -438,7 +395,7 @@ class TardisWidget(QWidget):
                     "cnn_threshold": float(self.cnn_threshold.text()),
                     "dist_threshold": float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
-                    "predict_type": self.predict_type,
+                    "predict_type": "Microtubule",
                     "mask": bool(self.mask.checkState()),
                     "cnn_type": self.cnn_type.currentText(),
                     "checkpoint": [
@@ -452,14 +409,16 @@ class TardisWidget(QWidget):
                     "patch_size": int(self.patch_size.currentText()),
                     "points_in_patch": int(self.points_in_patch.text()),
                     "rotate": bool(self.rotate.checkState()),
-                    "amira_prefix": None,
-                    "filter_by_length": self.filter_by_length.text(),
-                    "connect_splines": self.connect_splines.text(),
-                    "connect_cylinder": self.connect_cylinder.text(),
-                    "amira_compare_distance": None,
-                    "amira_inter_probability": None,
+                    "amira_prefix": self.amira_prefix.text(),
+                    "filter_by_length": int(self.filter_by_length.text()),
+                    "connect_splines": int(self.connect_splines.text()),
+                    "connect_cylinder": int(self.connect_cylinder.text()),
+                    "amira_compare_distance": int(self.amira_compare_distance.text()),
+                    "amira_inter_probability": float(
+                        self.amira_inter_probability.text()
+                    ),
                     "device": self.device.currentText(),
-                    "image_type": self.image_type.currentText(),
+                    "image_type": None,
                 },
             )
         )
@@ -484,21 +443,13 @@ class TardisWidget(QWidget):
 
                 show_info("Finished Semantic Prediction !")
 
-                if self.predictor.expect_2d:
-                    self.img = self.predictor.image_stitcher(
-                        image_dir=self.predictor.output, mask=False, dtype=np.float32
-                    )[
-                        : self.predictor.scale_shape[0],
-                        : self.predictor.scale_shape[1],
-                    ]
-                else:
-                    self.img = self.predictor.image_stitcher(
-                        image_dir=self.predictor.output, mask=False, dtype=np.float32
-                    )[
-                        : self.predictor.scale_shape[0],
-                        : self.predictor.scale_shape[1],
-                        : self.predictor.scale_shape[2],
-                    ]
+                self.img = self.predictor.image_stitcher(
+                    image_dir=self.predictor.output, mask=False, dtype=np.float32
+                )[
+                    : self.predictor.scale_shape[0],
+                    : self.predictor.scale_shape[1],
+                    : self.predictor.scale_shape[2],
+                ]
                 self.img, _ = scale_image(
                     image=self.img, scale=self.predictor.org_shape
                 )
@@ -524,7 +475,7 @@ class TardisWidget(QWidget):
         if not self.output_formats.endswith("None"):
             if self.predictor.dist is None:
                 self.predictor.output_format = self.output_formats
-                self.predictor.build_NN(self.predict_type)
+                self.predictor.build_NN("Microtubule")
 
             self.segments = np.zeros((0, 4))
 
@@ -575,30 +526,17 @@ class TardisWidget(QWidget):
             worker.start()
 
     def show_command(self):
-        ms = "" if not bool(self.mask.checkState()) else "-ms True"
-
-        px = (
-            ""
-            if self.correct_px.text() == "None"
-            else f"-px {float(self.correct_px.text())} "
-        )
-
-        if self.px is not None:
-            px = (
-                ""
-                if self.px == float(self.correct_px.text())
-                else f"-px {float(self.correct_px.text())} "
-            )
-
         ch = (
             ""
             if self.checkpoint.text() == "None"
             else f"-ch {self.checkpoint_dir}_None "
         )
 
-        fi = "-fi True " if bool(self.filament.checkState()) else ""
-
-        it = "-it 2d " if self.image_type.currentText() == "2D" else f"-it 3d "
+        mv = (
+            ""
+            if self.model_version.currentText() == "None"
+            else f"-mv {int(self.model_version.currentText())} "
+        )
 
         cnn = (
             ""
@@ -620,27 +558,36 @@ class TardisWidget(QWidget):
             else ""
         )
 
-        pv = (
-            f"-pv {int(self.points_in_patch.text())} "
-            if not self.points_in_patch.text() != "600"
-            else ""
+        fl = (
+            ""
+            if self.filter_by_length.text() == "1000"
+            else f"-fl {int(self.filter_by_length.text())} "
+        )
+        cs = (
+            ""
+            if self.connect_splines.text() == "2500"
+            else f"-fl {int(self.connect_splines.text())} "
+        )
+        cc = (
+            ""
+            if self.connect_cylinder.text() == "250"
+            else f"-fl {int(self.connect_cylinder.text())} "
         )
 
         show_info(
-            f"tardis_predict "
+            f"tardis_mt_tirf "
             f"-dir {self.out_} "
-            f"{ms}"
-            f"{px}"
-            f"{fi}"
-            f"{it}"
             f"{ch}"
+            f"{mv}"
             f"{cnn}"
             f"-out {self.output_formats} "
             f"-ps {int(self.patch_size.currentText())} "
             f"{rt}"
             f"{ct}"
             f"{dt}"
-            f"{pv}"
+            f"{fl}"
+            f"{cs}"
+            f"{cc}"
             f"-pv {int(self.points_in_patch.text())} "
             f"-dv {self.device.currentText()}"
         )

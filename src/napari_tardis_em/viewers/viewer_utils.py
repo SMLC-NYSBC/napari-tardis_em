@@ -95,74 +95,72 @@ def _update_versions(model_version, cnn_type, type_model):
 def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_params):
     """Pre-settings"""
 
-    if model_params['correct_px'] == "None":
-        model_params['correct_px'] = None
+    if model_params["correct_px"] == "None":
+        model_params["correct_px"] = None
     else:
-        model_params['correct_px'] = float(model_params['correct_px'])
+        model_params["correct_px"] = float(model_params["correct_px"])
 
     msg = (
         f"Predicted file is without pixel size metadate {model_params['correct_px']}."
         "Please correct correct_px argument with a correct pixel size value."
     )
-    if model_params['correct_px'] is None:
+    if model_params["correct_px"] is None:
         show_error(msg)
         return
 
-    output_formats = (
-        f"{output_semantic}_{output_instance}"
-    )
+    output_formats = f"{output_semantic}_{output_instance}"
 
     if output_instance == "None":
         instances = False
     else:
         instances = True
 
-    model_params['cnn_threshold'] = (
+    model_params["cnn_threshold"] = (
         "auto"
-        if model_params['cnn_threshold'] == 1.0
-        else model_params['cnn_threshold']
+        if model_params["cnn_threshold"] == 1.0
+        else model_params["cnn_threshold"]
     )
 
-    if model_params['model_version'] == "None":
-        model_params['model_version'] = None
+    if model_params["model_version"] == "None":
+        model_params["model_version"] = None
     else:
-        model_params['model_version'] = int(model_params['model_version'])
+        model_params["model_version"] = int(model_params["model_version"])
 
-    if model_params['filter_by_length'] == "None":
-        model_params['filter_by_length'] = None
+    if model_params["filter_by_length"] == "None":
+        model_params["filter_by_length"] = None
     else:
-        model_params['filter_by_length'] = int(model_params['filter_by_length'])
-    if model_params['connect_splines'] == "None":
-        model_params['connect_splines'] = None
+        model_params["filter_by_length"] = int(model_params["filter_by_length"])
+    if model_params["connect_splines"] == "None":
+        model_params["connect_splines"] = None
     else:
-        model_params['connect_splines'] = int(model_params['connect_splines'])
-    if model_params['connect_cylinder'] == "None":
-        model_params['connect_cylinder'] = None
+        model_params["connect_splines"] = int(model_params["connect_splines"])
+    if model_params["connect_cylinder"] == "None":
+        model_params["connect_cylinder"] = None
     else:
-        model_params['connect_cylinder'] = int(model_params['connect_cylinder'])
+        model_params["connect_cylinder"] = int(model_params["connect_cylinder"])
 
     predictor = GeneralPredictor(
-        predict=model_params['predict_type'],
+        predict=model_params["predict_type"],
         dir_=dir_,
-        binary_mask=model_params['mask'],
-        correct_px=model_params['correct_px'],
-        convolution_nn=model_params['cnn_type'],
-        checkpoint=model_params['checkpoint'],
-        model_version=model_params['model_version'],
+        binary_mask=model_params["mask"],
+        correct_px=model_params["correct_px"],
+        convolution_nn=model_params["cnn_type"],
+        checkpoint=model_params["checkpoint"],
+        model_version=model_params["model_version"],
         output_format=output_formats,
-        patch_size=model_params['patch_size'],
-        cnn_threshold=model_params['cnn_threshold'],
-        dist_threshold=model_params['dist_threshold'],
-        points_in_patch=model_params['points_in_patch'],
-        predict_with_rotation=model_params['rotate'],
-        amira_prefix=model_params['amira_prefix'],
-        filter_by_length=model_params['filter_by_length'],
-        connect_splines=model_params['connect_splines'],
-        connect_cylinder=model_params['connect_cylinder'],
-        amira_compare_distance=model_params['amira_compare_distance'],
-        amira_inter_probability=model_params['amira_inter_probability'],
+        patch_size=model_params["patch_size"],
+        cnn_threshold=model_params["cnn_threshold"],
+        dist_threshold=model_params["dist_threshold"],
+        points_in_patch=model_params["points_in_patch"],
+        predict_with_rotation=model_params["rotate"],
+        amira_prefix=model_params["amira_prefix"],
+        filter_by_length=model_params["filter_by_length"],
+        connect_splines=model_params["connect_splines"],
+        connect_cylinder=model_params["connect_cylinder"],
+        amira_compare_distance=model_params["amira_compare_distance"],
+        amira_inter_probability=model_params["amira_inter_probability"],
         instances=instances,
-        device_=model_params['device'],
+        device_=model_params["device"],
         debug=False,
         tardis_logo=False,
     )
@@ -172,15 +170,15 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
     predictor.create_headers()
     predictor.load_data(id_name=predictor.predict_list[0])
 
-    if model_params['image_type'] is not None:
-        if model_params['image_type'] == "2D":
+    if model_params["image_type"] is not None:
+        if model_params["image_type"] == "2D":
             predictor.expect_2d = True
             predictor.cnn._2d = True
         else:
             predictor.expect_2d = False
             predictor.cnn._2d = False
 
-    if not model_params['mask']:
+    if not model_params["mask"]:
         trim_with_stride(
             image=predictor.image,
             scale=predictor.scale_shape,
@@ -212,9 +210,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
         predictor.image = None
         scale_shape = predictor.scale_shape
 
-        img_dataset = PredictionDataset(
-            join(dir_, "temp", "Patches", "imgs")
-        )
+        img_dataset = PredictionDataset(join(dir_, "temp", "Patches", "imgs"))
 
         return output_formats, predictor, scale_shape, img_dataset
     else:

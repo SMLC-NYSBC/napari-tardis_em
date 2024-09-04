@@ -8,7 +8,6 @@
 #  MIT License 2024                                                   #
 #######################################################################
 from os import getcwd
-from os.path import join
 
 import numpy as np
 import torch
@@ -46,7 +45,8 @@ from napari_tardis_em.viewers.viewer_utils import (
     _update_cnn_threshold,
     _update_dist_layer,
     _update_dist_graph,
-    _update_versions, semantic_preprocess,
+    _update_versions,
+    semantic_preprocess,
 )
 
 
@@ -437,36 +437,47 @@ class TardisWidget(QWidget):
         self.output_folder = f"{filename}/Predictions/"
 
     def predict_semantic(self):
-        self.output_formats, self.predictor, self.scale_shape, img_dataset = semantic_preprocess(
-            self.viewer,
-            self.dir,
-            self.output_semantic.currentText(),
-            self.output_instance.currentText(),
-            {
-                "correct_px": self.correct_px.text(),
-                "cnn_threshold": float(self.cnn_threshold.text()),
-                "dist_threshold": float(self.dist_threshold.text()),
-                "model_version": self.model_version.currentText(),
-                "predict_type": "Microtubule",
-                "mask": bool(self.mask.checkState()),
-                "cnn_type": self.cnn_type.currentText(),
-                "checkpoint": [None if self.checkpoint.text() == "None" else self.checkpoint_dir,
-                               None],
-                "patch_size": int(self.patch_size.currentText()),
-                "points_in_patch": int(self.points_in_patch.text()),
-                "rotate": bool(self.rotate.checkState()),
-                "amira_prefix": self.amira_prefix.text(),
-                "filter_by_length": int(self.filter_by_length.text()),
-                "connect_splines": int(self.connect_splines.text()),
-                "connect_cylinder": int(self.connect_cylinder.text()),
-                "amira_compare_distance": int(self.amira_compare_distance.text()),
-                "amira_inter_probability": float(self.amira_inter_probability.text()),
-                "device": self.device.currentText(),
-                "image_type": None,
-            }
+        self.output_formats, self.predictor, self.scale_shape, img_dataset = (
+            semantic_preprocess(
+                self.viewer,
+                self.dir,
+                self.output_semantic.currentText(),
+                self.output_instance.currentText(),
+                {
+                    "correct_px": self.correct_px.text(),
+                    "cnn_threshold": float(self.cnn_threshold.text()),
+                    "dist_threshold": float(self.dist_threshold.text()),
+                    "model_version": self.model_version.currentText(),
+                    "predict_type": "Microtubule",
+                    "mask": bool(self.mask.checkState()),
+                    "cnn_type": self.cnn_type.currentText(),
+                    "checkpoint": [
+                        (
+                            None
+                            if self.checkpoint.text() == "None"
+                            else self.checkpoint_dir
+                        ),
+                        None,
+                    ],
+                    "patch_size": int(self.patch_size.currentText()),
+                    "points_in_patch": int(self.points_in_patch.text()),
+                    "rotate": bool(self.rotate.checkState()),
+                    "amira_prefix": self.amira_prefix.text(),
+                    "filter_by_length": int(self.filter_by_length.text()),
+                    "connect_splines": int(self.connect_splines.text()),
+                    "connect_cylinder": int(self.connect_cylinder.text()),
+                    "amira_compare_distance": int(self.amira_compare_distance.text()),
+                    "amira_inter_probability": float(
+                        self.amira_inter_probability.text()
+                    ),
+                    "device": self.device.currentText(),
+                    "image_type": None,
+                },
+            )
         )
 
         if not bool(self.mask.checkState()):
+
             @thread_worker(
                 start_thread=False,
                 progress={"desc": "semantic-segmentation-progress"},
@@ -649,7 +660,7 @@ class TardisWidget(QWidget):
         show_info(
             f"tardis_mt "
             f"-dir {self.out_} "
-            f"{mask}"
+            f"{ms}"
             f"{px}"
             f"{ch}"
             f"{mv}"
