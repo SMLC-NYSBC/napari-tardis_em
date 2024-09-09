@@ -8,7 +8,6 @@
 #  MIT License 2024                                                   #
 #######################################################################
 from os import getcwd
-from os.path import join
 
 import numpy as np
 import torch
@@ -23,7 +22,6 @@ from PyQt5.QtWidgets import (
     QLabel,
     QCheckBox,
     QDoubleSpinBox,
-    QFileDialog,
 )
 from qtpy.QtWidgets import QWidget
 
@@ -32,14 +30,8 @@ from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info, show_error
 
 from tardis_em.cnn.data_processing.scaling import scale_image
-from tardis_em.cnn.data_processing.trim import trim_with_stride
-from tardis_em.cnn.datasets.dataloader import PredictionDataset
-from tardis_em.utils.aws import get_all_version_aws
 from tardis_em.utils.load_data import load_image
-from tardis_em.utils.normalization import adaptive_threshold
-from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.utils.setup_envir import clean_up
-from tardis_em.utils.spline_metric import sort_by_length
 
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
@@ -47,12 +39,14 @@ from napari_tardis_em.viewers.utils import (
     create_image_layer,
     update_viewer_prediction,
     calculate_position,
+    _update_checkpoint_dir,
 )
 from napari_tardis_em.viewers.viewer_utils import (
     _update_cnn_threshold,
     _update_dist_layer,
     _update_dist_graph,
     _update_versions,
+    semantic_preprocess,
 )
 
 
@@ -60,9 +54,9 @@ class TardisWidget(QWidget):
     """
     Easy to use plugin for general Membrane prediction from micrographs.
 
-    Plugin integrate TARDIS-em and allow to easily set up training. To make it more
-    user-friendly, this plugin guid user what to do, and during training display
-     results from validation loop.
+    Plugin integrates TARDIS-em and allows easily set-up training. To make it more
+    user-friendly, this plugin guids the user what to do, and during training display
+     results from a validation loop.
     """
 
     def __init__(self, viewer_mem_2d: Viewer):
@@ -309,10 +303,8 @@ class TardisWidget(QWidget):
         self.setLayout(layout)
 
     def update_checkpoint_dir(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            caption="Open File",
-            directory=getcwd(),
-        )
+        filename = _update_checkpoint_dir()
+
         self.checkpoint.setText(filename[-30:])
         self.checkpoint_dir = filename
 
@@ -359,24 +351,15 @@ class TardisWidget(QWidget):
                     self.predictor.save_instance_PC(self.dir.split("/")[-1])
 
     def load_directory(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            caption="Open File",
-            directory=getcwd(),
-            # filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
-        )
+        filename_, out_ = _update_checkpoint_dir(filter_=True)
 
-        out_ = [
-            i
-            for i in filename.split("/")
-            if not i.endswith((".mrc", ".rec", ".map", ".tif", ".tiff", ".am"))
-        ]
         self.out_ = "/".join(out_)
 
         self.output.setText(f"...{self.out_[-17:]}/Predictions/")
         self.output_folder = f"...{self.out_}/Predictions/"
 
-        self.directory.setText(filename[-30:])
-        self.dir = filename
+        self.directory.setText(filename_[-30:])
+        self.dir = filename_
 
         self.img, self.px = load_image(self.dir)
 
@@ -393,116 +376,51 @@ class TardisWidget(QWidget):
         self.img = None
 
     def load_output(self):
-        filename = QFileDialog.getExistingDirectory(
-            caption="Open File",
-            directory=getcwd(),
-        )
-        self.output.setText(f"...{filename[-17:]}/Predictions/")
-        self.output_folder = f"{filename}/Predictions/"
+        filename_ = _update_checkpoint_dir()
+
+        self.output.setText(f"...{filename_[-17:]}/Predictions/")
+        self.output_folder = f"{filename_}/Predictions/"
 
     def predict_semantic(self):
-        """Pre-settings"""
-
-        if self.correct_px.text() == "None":
-            correct_px = None
-        else:
-            correct_px = float(self.correct_px.text())
-
-        msg = (
-            f"Predicted file is without pixel size metadate {correct_px}."
-            "Please correct correct_px argument with a correct pixel size value."
+        self.output_formats, self.predictor, self.scale_shape, img_dataset = (
+            semantic_preprocess(
+                self.viewer,
+                self.dir,
+                self.output_semantic.currentText(),
+                self.output_instance.currentText(),
+                {
+                    "correct_px": self.correct_px.text(),
+                    "normalize_px": "None",
+                    "cnn_threshold": float(self.cnn_threshold.text()),
+                    "dist_threshold": float(self.dist_threshold.text()),
+                    "model_version": self.model_version.currentText(),
+                    "predict_type": "Membrane2D",
+                    "mask": bool(self.mask.checkState()),
+                    "cnn_type": self.cnn_type.currentText(),
+                    "checkpoint": [
+                        (
+                            None
+                            if self.checkpoint.text() == "None"
+                            else self.checkpoint_dir
+                        ),
+                        None,
+                    ],
+                    "patch_size": int(self.patch_size.currentText()),
+                    "points_in_patch": int(self.points_in_patch.text()),
+                    "rotate": bool(self.rotate.checkState()),
+                    "amira_prefix": "None",
+                    "filter_by_length": int(self.filter_by_length.text()),
+                    "connect_splines": int(self.connect_membranes.text()),
+                    "connect_cylinder": int(self.connect_cylinder.text()),
+                    "amira_compare_distance": "None",
+                    "amira_inter_probability": "None",
+                    "device": self.device.currentText(),
+                    "image_type": None,
+                },
+            )
         )
-        if correct_px is None:
-            show_error(msg)
-            return
-
-        self.output_formats = (
-            f"{self.output_semantic.currentText()}_{self.output_instance.currentText()}"
-        )
-
-        if self.output_instance.currentText() == "None":
-            instances = False
-        else:
-            instances = True
-
-        cnn_threshold = (
-            "auto"
-            if float(self.cnn_threshold.text()) == 1.0
-            else self.cnn_threshold.text()
-        )
-
-        if self.model_version.currentText() == "None":
-            model_version = None
-        else:
-            model_version = int(self.model_version.currentText())
-
-        self.predictor = GeneralPredictor(
-            predict="Membrane2D",
-            dir_=self.dir,
-            binary_mask=bool(self.mask.checkState()),
-            correct_px=correct_px,
-            convolution_nn=self.cnn_type.currentText(),
-            checkpoint=[
-                None if self.checkpoint.text() == "None" else self.checkpoint_dir,
-                None,
-            ],
-            model_version=model_version,
-            output_format=self.output_formats,
-            patch_size=int(self.patch_size.currentText()),
-            cnn_threshold=cnn_threshold,
-            dist_threshold=float(self.dist_threshold.text()),
-            points_in_patch=int(self.points_in_patch.text()),
-            predict_with_rotation=bool(self.rotate.checkState()),
-            amira_prefix=self.amira_prefix.text(),
-            filter_by_length=int(self.filter_by_length.text()),
-            connect_splines=int(self.connect_membranes.text()),
-            connect_cylinder=int(self.connect_cylinder.text()),
-            instances=instances,
-            device_=self.device.currentText(),
-            debug=False,
-            tardis_logo=False,
-        )
-        self.predictor.in_format = len(self.dir.split(".")[-1]) + 1
-
-        self.predictor.get_file_list()
-        self.predictor.create_headers()
-        self.predictor.load_data(id_name=self.predictor.predict_list[0])
 
         if not bool(self.mask.checkState()):
-            trim_with_stride(
-                image=self.predictor.image,
-                scale=self.predictor.scale_shape,
-                trim_size_xy=self.predictor.patch_size,
-                trim_size_z=self.predictor.patch_size,
-                output=join(self.predictor.dir, "temp", "Patches"),
-                image_counter=0,
-                clean_empty=False,
-                stride=round(self.predictor.patch_size * 0.125),
-            )
-
-            create_image_layer(
-                self.viewer,
-                image=self.predictor.image,
-                name=self.dir.split("/")[-1],
-                range_=(np.min(self.predictor.image), np.max(self.predictor.image)),
-                visibility=False,
-                transparency=False,
-            )
-
-            create_image_layer(
-                self.viewer,
-                image=np.zeros(self.predictor.scale_shape, dtype=np.float32),
-                name="Prediction",
-                transparency=True,
-                range_=None,
-            )
-
-            self.predictor.image = None
-            self.scale_shape = self.predictor.scale_shape
-
-            img_dataset = PredictionDataset(
-                join(self.predictor.dir, "temp", "Patches", "imgs")
-            )
 
             @thread_worker(
                 start_thread=False,
@@ -650,15 +568,15 @@ class TardisWidget(QWidget):
             else ""
         )
 
-        cs = (
+        cm = (
             ""
             if self.connect_membranes.text() == "1000"
-            else f"-fl {int(self.connect_membranes.text())} "
+            else f"-cm {int(self.connect_membranes.text())} "
         )
         cc = (
             ""
             if self.connect_cylinder.text() == "250"
-            else f"-fl {int(self.connect_cylinder.text())} "
+            else f"-cc {int(self.connect_cylinder.text())} "
         )
 
         show_info(
@@ -674,7 +592,7 @@ class TardisWidget(QWidget):
             f"{rt}"
             f"{ct}"
             f"{dt}"
-            f"{cs}"
+            f"{cm}"
             f"{cc}"
             f"-pv {int(self.points_in_patch.text())} "
             f"-dv {self.device.currentText()}"

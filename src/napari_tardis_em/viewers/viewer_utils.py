@@ -1,4 +1,4 @@
-from os.path import join
+from os.path import join, dirname
 
 import numpy as np
 from napari.utils.notifications import show_info, show_error
@@ -11,7 +11,7 @@ from tardis_em.utils.predictor import GeneralPredictor
 from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
 from tardis_em.utils.aws import get_all_version_aws
 
-from tardis_em.utils.spline_metric import sort_by_length
+from tardis_em.analysis.filament_utils import sort_by_length
 
 from tardis_em.utils.normalization import adaptive_threshold
 
@@ -108,6 +108,11 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
         show_error(msg)
         return
 
+    if model_params["normalize_px"] == "None":
+        model_params["normalize_px"] = None
+    else:
+        model_params["normalize_px"] = float(model_params["normalize_px"])
+
     output_formats = f"{output_semantic}_{output_instance}"
 
     if output_instance == "None":
@@ -130,20 +135,42 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
         model_params["filter_by_length"] = None
     else:
         model_params["filter_by_length"] = int(model_params["filter_by_length"])
+
     if model_params["connect_splines"] == "None":
         model_params["connect_splines"] = None
     else:
         model_params["connect_splines"] = int(model_params["connect_splines"])
+
     if model_params["connect_cylinder"] == "None":
         model_params["connect_cylinder"] = None
     else:
         model_params["connect_cylinder"] = int(model_params["connect_cylinder"])
+
+    if model_params["amira_prefix"] == "None":
+        model_params["amira_prefix"] = None
+    else:
+        model_params["amira_prefix"] = str(model_params["amira_prefix"])
+
+    if model_params["amira_compare_distance"] == "None":
+        model_params["amira_compare_distance"] = None
+    else:
+        model_params["amira_compare_distance"] = int(
+            model_params["amira_compare_distance"]
+        )
+
+    if model_params["amira_inter_probability"] == "None":
+        model_params["amira_inter_probability"] = None
+    else:
+        model_params["amira_inter_probability"] = float(
+            model_params["amira_inter_probability"]
+        )
 
     predictor = GeneralPredictor(
         predict=model_params["predict_type"],
         dir_=dir_,
         binary_mask=model_params["mask"],
         correct_px=model_params["correct_px"],
+        normalize_px=model_params["normalize_px"],
         convolution_nn=model_params["cnn_type"],
         checkpoint=model_params["checkpoint"],
         model_version=model_params["model_version"],
@@ -184,7 +211,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
             scale=predictor.scale_shape,
             trim_size_xy=predictor.patch_size,
             trim_size_z=predictor.patch_size,
-            output=join(dir_, "temp", "Patches"),
+            output=join(dirname(dir_), "temp", "Patches"),
             image_counter=0,
             clean_empty=False,
             stride=round(predictor.patch_size * 0.125),
@@ -210,7 +237,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
         predictor.image = None
         scale_shape = predictor.scale_shape
 
-        img_dataset = PredictionDataset(join(dir_, "temp", "Patches", "imgs"))
+        img_dataset = PredictionDataset(join(dirname(dir_), "temp", "Patches", "imgs"))
 
         return output_formats, predictor, scale_shape, img_dataset
     else:

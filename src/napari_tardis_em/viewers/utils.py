@@ -7,11 +7,12 @@
 #  Robert Kiewisz, Tristan Bepler                                     #
 #  MIT License 2024                                                   #
 #######################################################################
-from os import mkdir, listdir
+from os import mkdir, listdir, getcwd
 from os.path import join, isdir
 from shutil import rmtree
 
 import numpy as np
+from PyQt5.QtWidgets import QFileDialog
 
 from napari_tardis_em.viewers import colormap_for_display, face_colormap, IMG_FORMAT
 
@@ -285,3 +286,19 @@ def calculate_position(patch_size, name):
     name["z"] = [z_start, z_end]
 
     return name
+
+
+def _update_checkpoint_dir(filter_=False):
+    filename_, _ = QFileDialog.getOpenFileName(
+        caption="Open File",
+        directory=getcwd(),
+    )
+
+    if filter_:
+        out_ = [
+            i
+            for i in filename_.split("/")
+            if not i.endswith((".mrc", ".rec", ".map", ".tif", ".tiff", ".am"))
+        ]
+        return filename_, out_
+    return filename_

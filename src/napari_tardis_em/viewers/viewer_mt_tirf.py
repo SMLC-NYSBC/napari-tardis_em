@@ -58,6 +58,7 @@ class TardisWidget(QWidget):
     user-friendly, this plugin guid user what to do, and during training display
      results from validation loop.
     """
+
     def __init__(self, viewer_mt_tirf: Viewer):
         super().__init__()
 
@@ -98,6 +99,7 @@ class TardisWidget(QWidget):
         self.output_semantic = QComboBox()
         self.output_semantic.addItems(["mrc", "tif", "npy", "am"])
         self.output_semantic.setToolTip("Select semantic output format file.")
+        self.output_semantic.setCurrentIndex(1)
 
         self.output_instance = QComboBox()
         self.output_instance.addItems(["None", "csv", "npy", "amSG", "mrc"])
@@ -363,9 +365,6 @@ class TardisWidget(QWidget):
 
         self.img, self.px = load_image(self.dir)
 
-        if self.correct_px.text() == "None" and self.px >= 0.0 or self.px != 1.0:
-            self.correct_px.setText(f"{self.px}")
-
         create_image_layer(
             self.viewer,
             image=self.img,
@@ -391,12 +390,13 @@ class TardisWidget(QWidget):
                 self.output_semantic.currentText(),
                 self.output_instance.currentText(),
                 {
-                    "correct_px": self.correct_px.text(),
+                    "correct_px": "None",
+                    "normalize_px": "1.0",
                     "cnn_threshold": float(self.cnn_threshold.text()),
                     "dist_threshold": float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
-                    "predict_type": "Microtubule",
-                    "mask": bool(self.mask.checkState()),
+                    "predict_type": "Microtubule_tirf",
+                    "mask": False,
                     "cnn_type": self.cnn_type.currentText(),
                     "checkpoint": [
                         (
@@ -409,59 +409,50 @@ class TardisWidget(QWidget):
                     "patch_size": int(self.patch_size.currentText()),
                     "points_in_patch": int(self.points_in_patch.text()),
                     "rotate": bool(self.rotate.checkState()),
-                    "amira_prefix": self.amira_prefix.text(),
+                    "amira_prefix": "None",
                     "filter_by_length": int(self.filter_by_length.text()),
                     "connect_splines": int(self.connect_splines.text()),
                     "connect_cylinder": int(self.connect_cylinder.text()),
-                    "amira_compare_distance": int(self.amira_compare_distance.text()),
-                    "amira_inter_probability": float(
-                        self.amira_inter_probability.text()
-                    ),
+                    "amira_compare_distance": "None",
+                    "amira_inter_probability": "None",
                     "device": self.device.currentText(),
                     "image_type": None,
                 },
             )
         )
+        print(self.output_formats, self.predictor, self.scale_shape, img_dataset)
 
-        if not bool(self.mask.checkState()):
+        @thread_worker(
+            start_thread=False,
+            progress={"desc": "semantic-segmentation-progress"},
+            connect={"finished": self.update_cnn_threshold},
+        )
+        def predict_dataset(img_dataset_, predictor):
+            for j in range(len(img_dataset_)):
+                input_, name = img_dataset_.__getitem__(j)
 
-            @thread_worker(
-                start_thread=False,
-                progress={"desc": "semantic-segmentation-progress"},
-                connect={"finished": self.update_cnn_threshold},
-            )
-            def predict_dataset(img_dataset_, predictor):
-                for j in range(len(img_dataset_)):
-                    input_, name = img_dataset_.__getitem__(j)
-
-                    input_ = predictor.predict_cnn_napari(input_, name)
-                    update_viewer_prediction(
-                        self.viewer,
-                        input_,
-                        calculate_position(int(self.patch_size.currentText()), name),
-                    )
-
-                show_info("Finished Semantic Prediction !")
-
-                self.img = self.predictor.image_stitcher(
-                    image_dir=self.predictor.output, mask=False, dtype=np.float32
-                )[
-                    : self.predictor.scale_shape[0],
-                    : self.predictor.scale_shape[1],
-                    : self.predictor.scale_shape[2],
-                ]
-                self.img, _ = scale_image(
-                    image=self.img, scale=self.predictor.org_shape
+                input_ = predictor.predict_cnn_napari(input_, name)
+                update_viewer_prediction(
+                    self.viewer,
+                    input_,
+                    calculate_position(int(self.patch_size.currentText()), name),
                 )
-                self.img = (
-                    torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
-                )
-                self.predictor.image = self.img
 
-            worker = predict_dataset(img_dataset, self.predictor)
-            worker.start()
-        else:
-            return
+            show_info("Finished Semantic Prediction !")
+
+            self.img = self.predictor.image_stitcher(
+                image_dir=self.predictor.output, mask=False, dtype=np.float32
+            )[
+                : self.predictor.scale_shape[0],
+                : self.predictor.scale_shape[1],
+                : self.predictor.scale_shape[2],
+            ]
+            self.img, _ = scale_image(image=self.img, scale=self.predictor.org_shape)
+            self.img = torch.sigmoid(torch.from_numpy(self.img)).cpu().detach().numpy()
+            self.predictor.image = self.img
+
+        worker = predict_dataset(img_dataset, self.predictor)
+        worker.start()
 
     def predict_instance(self):
         if self.predictor is None:
@@ -475,7 +466,7 @@ class TardisWidget(QWidget):
         if not self.output_formats.endswith("None"):
             if self.predictor.dist is None:
                 self.predictor.output_format = self.output_formats
-                self.predictor.build_NN("Microtubule")
+                self.predictor.build_NN("Microtubule_tirf")
 
             self.segments = np.zeros((0, 4))
 

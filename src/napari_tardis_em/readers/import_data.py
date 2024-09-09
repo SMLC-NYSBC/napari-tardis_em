@@ -7,24 +7,14 @@
 #  Robert Kiewisz, Tristan Bepler                                     #
 #  MIT License 2024                                                   #
 #######################################################################
-
 from os.path import splitext, basename
 from tardis_em.utils.load_data import load_image
 
 import numpy as np
 
-extensions_points = (
-    '.csv',
-)
+extensions_points = (".csv",)
 
-extensions_images = (
-    '.rec',
-    '.mrc',
-    '.tiff',
-    '.tif',
-    '.nd2',
-    '.am'
-)
+extensions_images = (".rec", ".mrc", ".tiff", ".tif", ".nd2", ".am")
 
 
 def napari_get_reader(path):
@@ -78,8 +68,7 @@ def reader_function_points(path):
 
         data = np.vstack((ids, t, data[:, 0], data[:, 1], data[:, 2])).T
 
-        add_kwargs = {"colormap": 'hsv',
-                      "name": _name}
+        add_kwargs = {"colormap": "hsv", "name": _name}
 
         layer_data.append((data, add_kwargs, layer_type))
 
@@ -101,11 +90,14 @@ def import_data(filepath):
         ids = data[:, 0].astype(np.int16)
         data = data[:, 1:]  # data in XYZ format
         if data.shape[1] == 2:
-            data = np.vstack((np.zeros_like(data[:, 0]), data[:, 1], data[:, 0])).T  # Convert 2D to Napari ZYX standard
+            data = np.vstack(
+                (np.zeros_like(data[:, 0]), data[:, 1], data[:, 0])
+            ).T  # Convert 2D to Napari ZYX standard
 
         else:
-            data = np.vstack((data[:, 2], data[:, 1], data[:, 0])).T  # Convert to Napari ZYX standard
-
+            data = np.vstack(
+                (data[:, 2], data[:, 1], data[:, 0])
+            ).T  # Convert to Napari ZYX standard
 
         unique_ids = np.unique(ids)
         colors_for_ids = generate_colors(len(unique_ids))

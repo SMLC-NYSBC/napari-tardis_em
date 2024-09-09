@@ -22,7 +22,6 @@ from PyQt5.QtWidgets import (
     QLabel,
     QCheckBox,
     QDoubleSpinBox,
-    QFileDialog,
 )
 from qtpy.QtWidgets import QWidget
 
@@ -40,6 +39,7 @@ from napari_tardis_em.viewers.utils import (
     create_image_layer,
     update_viewer_prediction,
     calculate_position,
+    _update_checkpoint_dir,
 )
 from napari_tardis_em.viewers.viewer_utils import (
     _update_cnn_threshold,
@@ -345,10 +345,8 @@ class TardisWidget(QWidget):
         self.setLayout(layout)
 
     def update_checkpoint_dir(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            caption="Open File",
-            directory=getcwd(),
-        )
+        filename = _update_checkpoint_dir()
+
         self.checkpoint.setText(filename[-30:])
         self.checkpoint_dir = filename
 
@@ -395,24 +393,15 @@ class TardisWidget(QWidget):
                     self.predictor.save_instance_PC(self.dir.split("/")[-1])
 
     def load_directory(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            caption="Open File",
-            directory=getcwd(),
-            # filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
-        )
+        filename_, out_ = _update_checkpoint_dir(filter_=True)
 
-        out_ = [
-            i
-            for i in filename.split("/")
-            if not i.endswith((".mrc", ".rec", ".map", ".tif", ".tiff", ".am"))
-        ]
         self.out_ = "/".join(out_)
 
         self.output.setText(f"...{self.out_[-17:]}/Predictions/")
         self.output_folder = f"...{self.out_}/Predictions/"
 
-        self.directory.setText(filename[-30:])
-        self.dir = filename
+        self.directory.setText(filename_[-30:])
+        self.dir = filename_
 
         self.img, self.px = load_image(self.dir)
 
@@ -429,12 +418,10 @@ class TardisWidget(QWidget):
         self.img = None
 
     def load_output(self):
-        filename = QFileDialog.getExistingDirectory(
-            caption="Open File",
-            directory=getcwd(),
-        )
-        self.output.setText(f"...{filename[-17:]}/Predictions/")
-        self.output_folder = f"{filename}/Predictions/"
+        filename_ = _update_checkpoint_dir()
+
+        self.output.setText(f"...{filename_[-17:]}/Predictions/")
+        self.output_folder = f"{filename_}/Predictions/"
 
     def predict_semantic(self):
         self.output_formats, self.predictor, self.scale_shape, img_dataset = (
@@ -445,6 +432,7 @@ class TardisWidget(QWidget):
                 self.output_instance.currentText(),
                 {
                     "correct_px": self.correct_px.text(),
+                    "normalize_px": "None",
                     "cnn_threshold": float(self.cnn_threshold.text()),
                     "dist_threshold": float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
