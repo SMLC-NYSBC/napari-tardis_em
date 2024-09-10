@@ -18,7 +18,8 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QLabel,
     QDoubleSpinBox,
-    QFileDialog, QLineEdit,
+    QFileDialog,
+    QLineEdit,
 )
 from qtpy.QtWidgets import QWidget
 
@@ -32,7 +33,12 @@ from napari_tardis_em.viewers.utils import create_image_layer, create_point_laye
 from tardis_em.analysis.analysis import analise_filaments_list
 from tardis_em.utils.load_data import load_image
 from tardis_em.utils.predictor import GeneralPredictor
-from tardis_em.analysis.filament_utils import reorder_segments_id, sort_segment, sort_by_length, sort_segments
+from tardis_em.analysis.filament_utils import (
+    reorder_segments_id,
+    sort_segment,
+    sort_by_length,
+    sort_segments,
+)
 
 
 class TardisWidget(QWidget):
@@ -83,10 +89,13 @@ class TardisWidget(QWidget):
         label_2.setStyleSheet(border_style("green"))
 
         self.workflow = QComboBox()
-        self.workflow.addItems([
-            "Actin",
-            "Microtubule",
-            "Microtubule_tirf",])
+        self.workflow.addItems(
+            [
+                "Actin",
+                "Microtubule",
+                "Microtubule_tirf",
+            ]
+        )
         self.workflow.setToolTip("Select workflow.")
         self.workflow.setCurrentIndex(1)
 
@@ -162,23 +171,17 @@ class TardisWidget(QWidget):
 
         self.filament_id_rm = QLineEdit("None")
         self.filament_id_rm.setValidator(QDoubleValidator(0, 10000, 1))
-        self.filament_id_rm.setToolTip(
-            "Select filament ID to remove"
-        )
+        self.filament_id_rm.setToolTip("Select filament ID to remove")
         self.remove_filament_bt = QPushButton("Remove filament")
         self.remove_filament_bt.setMinimumWidth(225)
         self.remove_filament_bt.clicked.connect(self.remove_filament)
 
         self.join_filaments_id_1 = QLineEdit("None")
         self.join_filaments_id_1.setValidator(QDoubleValidator(0, 10000, 1))
-        self.join_filaments_id_1.setToolTip(
-            "Select 1st filament ID to join"
-        )
+        self.join_filaments_id_1.setToolTip("Select 1st filament ID to join")
         self.join_filaments_id_2 = QLineEdit("None")
         self.join_filaments_id_2.setValidator(QDoubleValidator(0, 10000, 1))
-        self.join_filaments_id_2.setToolTip(
-            "Select 2nd filament ID to join"
-        )
+        self.join_filaments_id_2.setToolTip("Select 2nd filament ID to join")
         self.join_filaments_bt = QPushButton("Join filament")
         self.join_filaments_bt.setMinimumWidth(225)
         self.join_filaments_bt.clicked.connect(self.join_filaments)
@@ -296,7 +299,7 @@ class TardisWidget(QWidget):
         names_ = []
         for id_, i in enumerate(images):
             if self.image_list is not None:
-                name_ = names_[-1]+"_semantic"
+                name_ = names_[-1] + "_semantic"
             else:
                 name_ = f"Prediction_semantic_{id_}"
 
@@ -347,10 +350,10 @@ class TardisWidget(QWidget):
         else:
             dir_ = self.dir
 
-        if name.endswith('_instances_filter'):
+        if name.endswith("_instances_filter"):
             img_name = name[:-17]
             image = self.viewer.layers[img_name].data
-        elif name.endswith('_instances'):
+        elif name.endswith("_instances"):
             img_name = name[:-10]
             image = self.viewer.layers[img_name].data
 
@@ -400,7 +403,9 @@ class TardisWidget(QWidget):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         self.point_layer()
 
-        self.viewer.layers[name].feature_defaults['ids'] = np.max(np.unique(data[:, 0])) + 1
+        self.viewer.layers[name].feature_defaults["ids"] = (
+            np.max(np.unique(data[:, 0])) + 1
+        )
 
     def remove_filament(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
@@ -459,17 +464,11 @@ class TardisWidget(QWidget):
 
         # Convert IDxTimexZxYxX to IDxXxYxZ
         if data.shape[-1] == 5:
-            data = np.array((
-                data[:, 0],
-                data[:, 4], data[:, 3], data[:, 2]
-            )).T
+            data = np.array((data[:, 0], data[:, 4], data[:, 3], data[:, 2])).T
             type_layer = "tracks"
         else:
             ids = self.viewer.layers[active_layer].properties["ids"]
-            data = np.array((
-                ids,
-                data[:, 2], data[:, 1], data[:, 0]
-            )).T
+            data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
             type_layer = "points"
         if name:
             if type_:

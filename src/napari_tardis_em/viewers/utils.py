@@ -144,7 +144,7 @@ def create_point_layer(
             name=name,
             visible=visibility,
             features=point_features,
-            colormap="hsv"
+            colormap="hsv",
         )
 
     try:
