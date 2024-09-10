@@ -4,7 +4,7 @@ colormap_for_display = "red"
 
 face_colormap = "Spectral"
 
-IMG_FORMAT = (".tif", ".am", ".mrc", ".rec", ".map")
+IMG_FORMAT = (".tif", ".tiff", ".am", ".mrc", ".rec", ".map")
 
 loss_functions = [
     AdaptiveDiceLoss,

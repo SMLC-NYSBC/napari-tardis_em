@@ -61,10 +61,10 @@ contributions:
       python_name: napari_tardis_em.viewers.viewer_actin_3d:TardisWidget
       title: Predict Actin 3D
 
-#    # Analysis
-#    - id: napari-tardis-em.viewer_analysis_fibers
-#      python_name: napari_tardis_em.viewers.viewer_analysis_fibers:TardisWidget
-#      title: Fiber analysis
+    # Analysis
+    - id: napari-tardis-em.viewer_analysis_fibers
+      python_name: napari_tardis_em.viewers.viewer_analysis_fibers:TardisWidget
+      title: Fiber analysis
 
   readers:
     - command: napari-tardis-em.import_data
@@ -108,6 +108,6 @@ contributions:
     - command: napari-tardis-em.viewer_actin_3d
       display_name: Predict Actin 3D
 
-#    # Analysis
-#    - command: napari-tardis-em.viewer_analysis_fibers
-#      display_name: Fiber analysis
+    # Analysis
+    - command: napari-tardis-em.viewer_analysis_fibers
+      display_name: Fiber analysis

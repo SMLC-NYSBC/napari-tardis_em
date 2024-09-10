@@ -1,7 +1,7 @@
 from os.path import join, dirname
 
 import numpy as np
-from napari.utils.notifications import show_info, show_error
+from napari.utils.notifications import show_error
 from tardis_em.cnn.data_processing.trim import trim_with_stride
 
 from tardis_em.cnn.datasets.dataloader import PredictionDataset

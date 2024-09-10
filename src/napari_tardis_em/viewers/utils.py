@@ -10,6 +10,7 @@
 from os import mkdir, listdir, getcwd
 from os.path import join, isdir
 from shutil import rmtree
+from typing import List, Tuple, Optional
 
 import numpy as np
 from PyQt5.QtWidgets import QFileDialog
@@ -89,6 +90,7 @@ def create_point_layer(
     points: np.ndarray,
     name: str,
     visibility=True,
+    as_filament=False,
 ):
     """
     Create a point layer in napari.
@@ -98,15 +100,22 @@ def create_point_layer(
         points (np.ndarray): Image array to display
         name (str): Layer name
         visibility (bool):
+        as_filament (bool):
     """
     try:
         viewer.layers.remove(name)
     except Exception as e:
         pass
 
-    point_features = {
-        "confidence": tuple(points[:, 0].flatten() * np.random.randint(100)),
-    }
+    if not as_filament:
+        point_features = {
+            "ids": tuple(points[:, 0].flatten()),
+        }
+    else:
+        point_features = {
+            "ids": tuple(points[:, 0].flatten()),
+        }
+    ids = points[:, 0].astype(np.int16)
     points = np.array(points[:, 1:])
 
     # Assert points in 3D
@@ -116,17 +125,27 @@ def create_point_layer(
 
     # Convert xyz to zyx
     points = np.vstack((points[:, 2], points[:, 1], points[:, 0])).T
-    viewer.layers.select_all()
-    viewer.layers.toggle_selected_visibility()
 
-    viewer.add_points(
-        points,
-        features=point_features,
-        face_color="confidence",
-        face_colormap=face_colormap,
-        visible=visibility,
-        size=10,
-    )
+    if not as_filament:
+        viewer.add_points(
+            points,
+            name=name,
+            features=point_features,
+            face_color="ids",
+            face_colormap=face_colormap,
+            visible=visibility,
+            size=10,
+        )
+    else:
+        t = np.zeros_like(ids)
+        points = np.vstack((ids, t, points[:, 0], points[:, 1], points[:, 2])).T
+        viewer.add_tracks(
+            points,
+            name=name,
+            visible=visibility,
+            features=point_features,
+            colormap="hsv"
+        )
 
     try:
         viewer.layers["Predicted_Instances"].visible = True
@@ -147,7 +166,7 @@ def create_image_layer(
     name="Prediction",
     transparency=True,
     visibility=True,
-    range_: None = (0, 1),
+    range_: Optional[Tuple] = (0, 1),
 ):
     """
     Create an image layer in napari.
