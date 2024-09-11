@@ -1,18 +1,15 @@
 from os.path import join, dirname
 
 import numpy as np
+
 from napari.utils.notifications import show_error
-from tardis_em.cnn.data_processing.trim import trim_with_stride
-
-from tardis_em.cnn.datasets.dataloader import PredictionDataset
-
-from tardis_em.utils.predictor import GeneralPredictor
-
 from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
+
+from tardis_em.cnn.data_processing.trim import trim_with_stride
+from tardis_em.cnn.datasets.dataloader import PredictionDataset
+from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.utils.aws import get_all_version_aws
-
 from tardis_em.analysis.filament_utils import sort_by_length
-
 from tardis_em.utils.normalization import adaptive_threshold
 
 

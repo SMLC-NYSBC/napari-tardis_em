@@ -8,7 +8,6 @@
 #  MIT License 2024                                                   #
 #######################################################################
 from os import getcwd
-from os.path import join
 
 import numpy as np
 import torch
