@@ -107,15 +107,11 @@ def create_point_layer(
     except Exception as e:
         pass
 
-    if not as_filament:
-        point_features = {
-            "ids": tuple(points[:, 0].flatten()),
-        }
-    else:
-        point_features = {
-            "ids": tuple(points[:, 0].flatten()),
-        }
-    ids = points[:, 0].astype(np.int16)
+    point_features = {
+        "ids": tuple(points[:, 0].flatten()),
+    }
+
+    ids = points[:, -4].astype(np.int16)
     points = np.array(points[:, 1:])
 
     # Assert points in 3D
@@ -167,6 +163,7 @@ def create_image_layer(
     transparency=True,
     visibility=True,
     range_: Optional[Tuple] = (0, 1),
+    zero_dim=False,
 ):
     """
     Create an image layer in napari.
@@ -215,6 +212,9 @@ def create_image_layer(
         viewer.layers[name].visible = True
     else:
         viewer.layers[name].visible = False
+
+    if zero_dim:
+        viewer.dims.current_step = (0,) * (image.ndim - 2)
 
 
 def setup_environment_and_dataset(

@@ -7,9 +7,11 @@
 #  Robert Kiewisz, Tristan Bepler                                     #
 #  MIT License 2024                                                   #
 #######################################################################
-from os import getcwd, listdir
-from os.path import join, splitext
+import os
+from os import getcwd, listdir, mkdir
+from os.path import join, splitext, basename, isdir, isfile
 
+import pandas as pd
 from napari import Viewer
 from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
@@ -19,7 +21,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QDoubleSpinBox,
     QFileDialog,
-    QLineEdit,
+    QLineEdit, QCheckBox,
 )
 from qtpy.QtWidgets import QWidget
 
@@ -30,7 +32,7 @@ from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
 
-from tardis_em.analysis.analysis import analise_filaments_list
+from tardis_em.analysis.analysis import analyse_filaments_list
 from tardis_em.utils.load_data import load_image
 from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.analysis.filament_utils import (
@@ -61,7 +63,11 @@ class TardisWidget(QWidget):
 
         self.img, self.px = None, None
         self.out_ = getcwd()
+        self.image_name_list, self.nd2_list = None, None
         self.image_list = None
+
+        self.semantic, self.instances, self.instances_filter = None, None, None
+        self.nd2_current_frame = 0
 
         """""" """""" """
           UI Elements
@@ -76,11 +82,24 @@ class TardisWidget(QWidget):
         self.directory.clicked.connect(self.load_directory)
         self.dir = getcwd()
 
-        """""" """""" """
-           UI Setup
-        """ """""" """"""
-        layout = QFormLayout()
-        layout.addRow("Select Directory", self.directory)
+        self.no_instances = QCheckBox()
+        self.no_instances.setCheckState(2)
+
+        self.select_data_view = QComboBox()
+        self.select_data_view.addItems(
+            [
+                "None",
+            ]
+        )
+        self.select_data_view.currentTextChanged.connect(self.view_selected_data)
+
+        self.thickness_bt = QComboBox()
+        self.thickness_bt.addItems(
+            [
+                "1", "3", "5", "7", "9"
+            ]
+        )
+        self.thickness_bt.setCurrentIndex(1)
 
         ##############################
         # Setting user should change #
@@ -146,6 +165,16 @@ class TardisWidget(QWidget):
             "Select available device on which you want to train your model."
         )
 
+        self.pixel_size_bt = QLineEdit("1.0")
+        self.pixel_size_bt.setToolTip("Select correct pixel size for analysis")
+
+        self.analysis_ch = QComboBox()
+        self.analysis_ch.addItems(
+            [
+                "0",
+            ]
+        )
+
         label_run = QLabel("Start Prediction                 ")
         label_run.setStyleSheet(border_style("blue"))
 
@@ -160,6 +189,9 @@ class TardisWidget(QWidget):
         self.add_new_filament_bt = QPushButton("Add new filament")
         self.add_new_filament_bt.setMinimumWidth(225)
         self.add_new_filament_bt.clicked.connect(self.add_new_filament)
+
+        self.nd2_file_frame_bt = QComboBox()
+        self.nd2_file_frame_bt.currentTextChanged.connect(self.nd2_file_frame_change)
 
         self.edite_mode_bt_1 = QPushButton("Selected layer to points")
         self.edite_mode_bt_1.setMinimumWidth(225)
@@ -186,13 +218,18 @@ class TardisWidget(QWidget):
         self.join_filaments_bt.setMinimumWidth(225)
         self.join_filaments_bt.clicked.connect(self.join_filaments)
 
+        self.save_edited_instances_bt = QPushButton("Save selected instance file")
+        self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
         """
         Initialized UI
         """
         layout = QFormLayout()
         layout.addRow("Select Directory", self.directory)
+        layout.addRow("Show Instances if possible", self.no_instances)
+        layout.addRow("Select Image", self.select_data_view)
 
         layout.addRow("---- Workflow ----", label_2)
+        layout.addRow("Pixel size", self.pixel_size_bt)
         layout.addRow("Workflow type", self.workflow)
         layout.addRow("Semantic output", self.output_semantic)
         layout.addRow("Instance output", self.output_instance)
@@ -201,10 +238,13 @@ class TardisWidget(QWidget):
         layout.addRow("Device", self.device)
 
         layout.addRow("---- Run Prediction -----", label_run)
+        layout.addRow("Analysis Channel", self.analysis_ch)
+        layout.addRow("Line Thickness", self.thickness_bt)
         layout.addRow("", self.predict_1_button)
         layout.addRow("", self.predict_2_button)
 
         layout.addRow("---- Correct-filaments ----", label_2)
+        layout.addRow("Select nd2 frame", self.nd2_file_frame_bt)
         # Trigger addition mode with a new ID
         layout.addRow("", self.edite_mode_bt_1)
         layout.addRow("", self.edite_mode_bt_2)
@@ -219,6 +259,8 @@ class TardisWidget(QWidget):
         layout.addRow("Join Filaments ID 2", self.join_filaments_id_2)
         layout.addRow("Join Filaments", self.join_filaments_bt)
 
+        layout.addRow("", label_2)
+        layout.addRow("Save", self.save_edited_instances_bt)
         self.setLayout(layout)
 
     def load_directory(self):
@@ -233,38 +275,194 @@ class TardisWidget(QWidget):
 
         self.img = None
         self.load_data()
+        self.select_view_data()
+
+        if not isdir(join(self.dir, "Predictions")):
+            mkdir(join(self.dir, "Predictions"))
+
+        if not isdir(join(self.dir, "Predictions", "Analysis")):
+            mkdir(join(self.dir, "Predictions", "Analysis"))
 
     def load_data(self):
         image_list = listdir(self.dir)
-        nd2_list = [i for i in image_list if i.endswith(".nd2")]
+        self.nd2_list = [i for i in image_list if i.endswith(".nd2")]
+        if len(self.nd2_list) == 0:
+            self.nd2_list = None
 
-        if len(nd2_list) > 0:
+        if len(self.nd2_list) > 0:
             import tifffile.tifffile as save_tiff
             from tardis_em.utils.load_data import load_nd2_file
 
-            for i in nd2_list:
-                image, _ = load_nd2_file(join(self.dir, i), channels=True)
+            for i in self.nd2_list:
+                image, _ = load_nd2_file(join(self.dir, i))
 
-                for j in range(image.shape[0]):
+                for j in range(image.shape[1]):
                     name_file = join(self.dir, i[:-4]) + f"_{j}.tiff"
 
-                    save_tiff.imwrite(name_file, image[j, ...])
+                    save_tiff.imwrite(name_file, image[0, j, 0, ...])
 
         image_list = listdir(self.dir)
-        image_list = [i for i in image_list if i.endswith(IMG_FORMAT)]
 
-        for i in image_list:
-            img = load_image(join(self.dir, i), px_=False)
-            name_, _ = splitext(i)
+        if self.nd2_list is None:
+            image_list = [i for i in image_list if i.endswith(IMG_FORMAT)]
+        else:
+            image_list = self.nd2_list
 
+        self.image_name_list = image_list
+
+    def select_view_data(self):
+        self.loading_data_list = True
+        self.select_data_view.clear()
+        self.select_data_view.addItems(list(self.image_name_list))
+
+        self.loading_data_list = False
+        self.view_selected_data()
+
+    def view_selected_data(self):
+        if self.loading_data_list:
+            return
+
+        name_ = self.select_data_view.currentText()
+        img = load_image(join(self.dir, name_), px_=False)
+        range_ = (
+            (np.min(img[0, 0, 0, ...]), np.max(img[0, 0, 0, ...]))
+            if name_.endswith(".nd2")
+            else (np.min(img.flatten()), np.max(img.flatten()))
+        )
+
+        self.analysis_ch.clear()
+        if name_.endswith(".nd2"):
+            self.analysis_ch.addItems([str(i) for i in range(img.shape[0])])
+        else:
+            self.analysis_ch.addItems(["0"])
+
+        self.viewer.layers.clear()
+        self.nd2_current_frame = 0
+        create_image_layer(
+            self.viewer,
+            image=img,
+            range_=range_,
+            name=splitext(name_)[0],
+            transparency=False,
+            zero_dim=True if name_.endswith(".nd2") else False,
+        )
+        self.nd2_file_frame()
+
+        mask, instance = None, None
+        # Find files starting with name_ and ending with extension
+        # if self.nd2_list load all files and place them in [C, F, T, Y, X] else load file
+        nd2_in = f"_0" if self.nd2_list is not None else ""
+        is_mask_tif = isfile(
+            join(self.dir, "Predictions", splitext(name_)[0] + nd2_in + "_semantic.tif")
+        )
+        is_mask_mrc = isfile(
+            join(self.dir, "Predictions", splitext(name_)[0] + nd2_in + "_semantic.mrc")
+        )
+        is_instance = isfile(
+            join(
+                self.dir,
+                "Predictions",
+                splitext(name_)[0] + nd2_in + "_instances_filter.csv",
+            )
+        )
+        if self.no_instances.checkState() !=2:
+            is_instance = False
+
+        if is_mask_tif:
+            if self.nd2_list is None:
+                mask = load_image(
+                    join(self.dir, "Predictions", splitext(name_)[0] + "_semantic.tif"),
+                    px_=False,
+                )
+            else:
+                mask = np.zeros(img.shape, dtype=np.uint8)
+
+                for i in range(img.shape[1]):
+                    mask_array = load_image(
+                        join(
+                            self.dir,
+                            "Predictions",
+                            splitext(name_)[0] + f"_{i}" + "_semantic.tif",
+                        ),
+                        px_=False,
+                    )
+                    mask[:, i, :, ...] = mask_array
+        elif is_mask_mrc:
+            if self.nd2_list is None:
+                mask = load_image(
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + f"_0" + "_semantic.mrc",
+                    ),
+                    px_=False,
+                )
+            else:
+                mask = load_image(
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + nd2_in + "_semantic.mrc",
+                    ),
+                    px_=False,
+                )  # Y, Z
+                dir_list = [
+                    i
+                    for i in listdir(join(self.dir, "Predictions"))
+                    if i.startswith(splitext(name_)[0]) and i.endswith("_semantic.mrc")
+                ]
+                mask = np.zeros((1, len(dir_list), 1, *mask.shape), dtype=np.uint8)
+
+                for i in range(len(dir_list)):
+                    mask[0, i, 0, ...] = load_image(
+                        join(
+                            self.dir,
+                            "Predictions",
+                            splitext(name_)[0] + f"_{i}" + "_semantic.mrc",
+                        ),
+                        px_=False,
+                    )
+
+        if is_instance:
+            if self.nd2_list is None:
+                instance = np.genfromtxt(
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + "_instances_filter.csv",
+                    ),
+                    delimiter=",",
+                    skip_header=1,
+                )
+            else:
+                id_ = f"_{self.nd2_file_frame_bt.currentText()}"
+                instance = np.genfromtxt(
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + id_ + "_instances_filter.csv",
+                    ),
+                    delimiter=",",
+                    skip_header=1,
+                )
+
+        if mask is not None:
             create_image_layer(
                 self.viewer,
-                image=img,
-                name=name_,
-                range_=(np.min(img).item(0), np.max(img).item(0)),
-                transparency=False,
+                image=mask,
+                name=splitext(name_)[0] + "_semantic",
+                range_=(0, 1),
+                transparency=True,
             )
-        self.image_list = image_list
+
+        if instance is not None and self.no_instances:
+            create_point_layer(
+                self.viewer,
+                points=instance,
+                name=splitext(name_)[0] + "_instance",
+                visibility=True,
+                as_filament=True,
+            )
 
     def predict_workflow(self):
         workflow = self.workflow.currentText()
@@ -277,7 +475,7 @@ class TardisWidget(QWidget):
             convolution_nn="fnet_attn",
             checkpoint=[None, None],
             model_version=None,
-            output_format="return_return",
+            output_format="tif_csv",
             patch_size=256 if workflow == "Microtubule_tirf" else 96,
             cnn_threshold=self.cnn_threshold.text(),
             dist_threshold=float(self.dist_threshold.text()),
@@ -294,82 +492,93 @@ class TardisWidget(QWidget):
             debug=False,
         )
 
-        images, instances, instances_filter = predictor()
-
-        names_ = []
-        for id_, i in enumerate(images):
-            if self.image_list is not None:
-                name_ = names_[-1] + "_semantic"
-            else:
-                name_ = f"Prediction_semantic_{id_}"
-
-            create_image_layer(
-                self.viewer,
-                image=i,
-                name=name_,
-                range_=(0, 1),
-                transparency=False,
-            )
-
-        for id_, i in enumerate(instances_filter):
-            if self.image_list is not None:
-                name_ = names_[id_] + "_instances_filter"
-            else:
-                name_ = f"Prediction_instances_filter_{id_}"
-            names_.append(name_)
-
-            create_point_layer(
-                self.viewer,
-                points=i,
-                name=name_,
-                visibility=True,
-                as_filament=True,
-            )
-        self.predicted = True
-
-        analise_filaments_list(
-            data=instances_filter,
-            names_=names_,
-            path=join(self.dir, "Predictions"),
-            images=images,
-            px_=None,
-        )
+        predictor()
+        self.view_selected_data()
 
     def re_analise_data(self):
-        data, name = self.get_selected_data(name=True)
+        name_ = self.select_data_view.currentText()
+        data = self.get_selected_data()
+        frame_ = self.nd2_current_frame
+        dim_ = int(self.analysis_ch.currentText())
 
         data = sort_segments(data)
         data = sort_by_length(reorder_segments_id(data))
 
-        if not self.predicted:
-            dir_ = QFileDialog.getExistingDirectory(
-                caption="Open Files",
-                directory=getcwd(),
-                # filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
+        T, img = None, None
+        if name_.endswith(".nd2"):
+            img = self.viewer.layers[splitext(name_)[0]].data
+            T = img.shape[2]
+        if T == 1:
+            T = None
+
+        pixel_size = float(self.pixel_size_bt.text())
+        if pixel_size == 1.0:
+            pixel_size = None
+        else:
+            if T is not None:
+                pixel_size = [pixel_size for _ in range(T)]
+            else:
+                pixel_size = [pixel_size]
+
+        if T is not None:
+            analyse_filaments_list(
+                data=[data for _ in range(T)],
+                names_=[splitext(name_)[0] + f"_{i}" for i in range(T)],
+                path=join(self.dir, "Predictions", "Analysis"),
+                images=[img[dim_, frame_, i, ...] for i in range(T)],
+                px_=pixel_size,
+                thickness=int(self.thickness_bt.currentText())
             )
         else:
-            dir_ = self.dir
-
-        if name.endswith("_instances_filter"):
-            img_name = name[:-17]
-            image = self.viewer.layers[img_name].data
-        elif name.endswith("_instances"):
-            img_name = name[:-10]
-            image = self.viewer.layers[img_name].data
-
-        analise_filaments_list(
-            data=[data],
-            names_=[name],
-            path=dir_,
-            images=[image],
-            px_=None,
-        )
+            analyse_filaments_list(
+                data=[data],
+                names_=[splitext(name_)[0] + f"_{frame_}"],
+                path=join(self.dir, "Predictions", "Analysis"),
+                images=[img[dim_, frame_, 0, ...]] if img is not None else None,
+                px_=pixel_size,
+                thickness=int(self.thickness_bt.currentText())
+            )
 
     def update_cnn_threshold(self):
         if self.workflow.currentText() == "Microtubule_tirf":
             self.cnn_threshold.setValue(0.1)
         else:
             self.cnn_threshold.setValue(0.25)
+
+    def nd2_file_frame(self):
+        self.nd2_update = True
+        name_ = self.select_data_view.currentText()
+        self.nd2_file_frame_bt.clear()
+        if name_.endswith(".nd2"):
+            C = self.viewer.layers[splitext(name_)[0]].data.shape[1]
+            self.nd2_file_frame_bt.addItems([str(i) for i in range(C)])
+
+        self.nd2_update = False
+
+    def nd2_file_frame_change(self):
+        if not self.nd2_update:
+            name_ = self.select_data_view.currentText()
+            self.save_edited_instances()
+            self.nd2_current_frame = int(self.nd2_file_frame_bt.currentText())
+
+            id_ = f"_{self.nd2_file_frame_bt.currentText()}"
+            instance = np.genfromtxt(
+                join(
+                    self.dir,
+                    "Predictions",
+                    splitext(name_)[0] + id_ + "_instances_filter.csv",
+                ),
+                delimiter=",",
+                skip_header=1,
+            )
+
+            create_point_layer(
+                self.viewer,
+                points=instance,
+                name=splitext(name_)[0] + "_instance",
+                visibility=True,
+                as_filament=True,
+            )
 
     def point_layer(self):
         data, name = self.get_selected_data(name=True)
@@ -470,6 +679,7 @@ class TardisWidget(QWidget):
             ids = self.viewer.layers[active_layer].properties["ids"]
             data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
             type_layer = "points"
+
         if name:
             if type_:
                 return data, active_layer, type_layer
@@ -477,3 +687,15 @@ class TardisWidget(QWidget):
         if type_:
             return data, type_layer
         return data
+
+    def save_edited_instances(self):
+        data = self.get_selected_data()
+        name_ = splitext(self.select_data_view.currentText())[0]
+        f_name = name_ + f"_{self.nd2_current_frame}" + "_instances_filter.csv"
+        segments = pd.DataFrame(data)
+        segments.to_csv(
+            join(self.dir, "Predictions", f_name),
+            header=["IDs", "X [A]", "Y [A]", "Z [A]"],
+            index=False,
+            sep=",",
+        )

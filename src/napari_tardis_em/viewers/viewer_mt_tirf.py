@@ -263,7 +263,7 @@ class TardisWidget(QWidget):
            UI Setup
         """ """""" """"""
         layout = QFormLayout()
-        layout.addRow("Select Directory", self.directory)
+        layout.addRow("Select File", self.directory)
         layout.addRow("Output Directory", self.output)
 
         layout.addRow("---- CNN Options ----", label_2)
@@ -355,7 +355,7 @@ class TardisWidget(QWidget):
             for i in filename.split("/")
             if not i.endswith((".mrc", ".rec", ".map", ".tif", ".tiff", ".am"))
         ]
-        self.out_ = "/".join(out_)
+        self.out_ = os.path.dirname(file_path[0])
 
         self.output.setText(f"...{self.out_[-17:]}/Predictions/")
         self.output_folder = f"...{self.out_}/Predictions/"
@@ -420,7 +420,6 @@ class TardisWidget(QWidget):
                 },
             )
         )
-        print(self.output_formats, self.predictor, self.scale_shape, img_dataset)
 
         @thread_worker(
             start_thread=False,
