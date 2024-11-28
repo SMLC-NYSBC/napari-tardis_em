@@ -69,7 +69,7 @@ contributions:
   readers:
     - command: napari-tardis-em.import_data
       accepts_directories: False
-      filename_patterns: ['*.mrc', '*.rec', '*.tif', '*.tiff', '*.nd2', '*.csv']
+      filename_patterns: ['*.mrc', '*.rec', '*.tif', '*.tiff', '*.nd2', '*.csv', '*.am']
 
 #  writers:
 #    - command: napari_tardis_em.export_image

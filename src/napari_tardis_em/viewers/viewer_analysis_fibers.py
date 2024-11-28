@@ -21,7 +21,8 @@ from PyQt5.QtWidgets import (
     QLabel,
     QDoubleSpinBox,
     QFileDialog,
-    QLineEdit, QCheckBox,
+    QLineEdit,
+    QCheckBox,
 )
 from qtpy.QtWidgets import QWidget
 
@@ -32,6 +33,7 @@ from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
 
+from tardis_em.dist_pytorch.utils.utils import pc_median_dist
 from tardis_em.analysis.analysis import analyse_filaments_list
 from tardis_em.utils.load_data import load_image
 from tardis_em.utils.predictor import GeneralPredictor
@@ -40,6 +42,7 @@ from tardis_em.analysis.filament_utils import (
     sort_segment,
     sort_by_length,
     sort_segments,
+    resample_filament,
 )
 
 
@@ -85,6 +88,9 @@ class TardisWidget(QWidget):
         self.no_instances = QCheckBox()
         self.no_instances.setCheckState(2)
 
+        self.norm_px_bt = QPushButton("Normalize")
+        self.norm_px_bt.clicked.connect(self.norm_px)
+
         self.select_data_view = QComboBox()
         self.select_data_view.addItems(
             [
@@ -94,11 +100,7 @@ class TardisWidget(QWidget):
         self.select_data_view.currentTextChanged.connect(self.view_selected_data)
 
         self.thickness_bt = QComboBox()
-        self.thickness_bt.addItems(
-            [
-                "1", "3", "5", "7", "9"
-            ]
-        )
+        self.thickness_bt.addItems(["1", "3", "5", "7", "9"])
         self.thickness_bt.setCurrentIndex(1)
 
         ##############################
@@ -214,9 +216,13 @@ class TardisWidget(QWidget):
         self.join_filaments_id_2 = QLineEdit("None")
         self.join_filaments_id_2.setValidator(QDoubleValidator(0, 10000, 1))
         self.join_filaments_id_2.setToolTip("Select 2nd filament ID to join")
+
         self.join_filaments_bt = QPushButton("Join filament")
         self.join_filaments_bt.setMinimumWidth(225)
         self.join_filaments_bt.clicked.connect(self.join_filaments)
+        self.join_selected_filaments_bt = QPushButton("Join Selected")
+        self.join_selected_filaments_bt.setMinimumWidth(225)
+        self.join_selected_filaments_bt.clicked.connect(self.join_selected_filaments)
 
         self.save_edited_instances_bt = QPushButton("Save selected instance file")
         self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
@@ -227,6 +233,7 @@ class TardisWidget(QWidget):
         layout.addRow("Select Directory", self.directory)
         layout.addRow("Show Instances if possible", self.no_instances)
         layout.addRow("Select Image", self.select_data_view)
+        layout.addRow("Normalize to pixel size", self.norm_px_bt)
 
         layout.addRow("---- Workflow ----", label_2)
         layout.addRow("Pixel size", self.pixel_size_bt)
@@ -258,6 +265,7 @@ class TardisWidget(QWidget):
         layout.addRow("Join Filaments ID 1", self.join_filaments_id_1)
         layout.addRow("Join Filaments ID 2", self.join_filaments_id_2)
         layout.addRow("Join Filaments", self.join_filaments_bt)
+        layout.addRow("", self.join_selected_filaments_bt)
 
         layout.addRow("", label_2)
         layout.addRow("Save", self.save_edited_instances_bt)
@@ -286,10 +294,11 @@ class TardisWidget(QWidget):
     def load_data(self):
         image_list = listdir(self.dir)
         self.nd2_list = [i for i in image_list if i.endswith(".nd2")]
+
         if len(self.nd2_list) == 0:
             self.nd2_list = None
 
-        if len(self.nd2_list) > 0:
+        if self.nd2_list is not None:
             import tifffile.tifffile as save_tiff
             from tardis_em.utils.load_data import load_nd2_file
 
@@ -365,7 +374,7 @@ class TardisWidget(QWidget):
                 splitext(name_)[0] + nd2_in + "_instances_filter.csv",
             )
         )
-        if self.no_instances.checkState() !=2:
+        if self.no_instances.checkState() != 2:
             is_instance = False
 
         if is_mask_tif:
@@ -527,7 +536,7 @@ class TardisWidget(QWidget):
                 path=join(self.dir, "Predictions", "Analysis"),
                 images=[img[dim_, frame_, i, ...] for i in range(T)],
                 px_=pixel_size,
-                thickness=int(self.thickness_bt.currentText())
+                thickness=int(self.thickness_bt.currentText()),
             )
         else:
             analyse_filaments_list(
@@ -536,7 +545,7 @@ class TardisWidget(QWidget):
                 path=join(self.dir, "Predictions", "Analysis"),
                 images=[img[dim_, frame_, 0, ...]] if img is not None else None,
                 px_=pixel_size,
-                thickness=int(self.thickness_bt.currentText())
+                thickness=int(self.thickness_bt.currentText()),
             )
 
     def update_cnn_threshold(self):
@@ -667,6 +676,37 @@ class TardisWidget(QWidget):
         else:
             return
 
+    def join_selected_filaments(self):
+        data, name, type_ = self.get_selected_data(name=True, type_=True)
+        indices = self.get_selected_ids()
+        indices = list(np.unique(data[indices, 0]))
+
+        joined = data[np.isin(data[:, 0], indices), 1:]
+        joined = sort_segment(joined)
+
+        next_id = np.max(np.unique(data[:, 0])).item(0) + 1
+        next_id = np.repeat(next_id, len(joined))
+
+        joined = np.array((next_id, joined[:, 0], joined[:, 1], joined[:, 2])).T
+
+        data = data[~np.isin(data[:, 0], indices)]
+        data = np.concatenate((data, joined))
+
+        data = sort_by_length(reorder_segments_id(data))
+        data = resample_filament(data, int(pc_median_dist(data[:, 1:])))
+
+        create_point_layer(
+            viewer=self.viewer,
+            points=data,
+            name=name,
+            visibility=True,
+            as_filament=True if type_ == "tracks" else False,
+        )
+
+    def get_selected_ids(self):
+        active_layer = self.viewer.layers.selection.active.name
+        return list(self.viewer.layers[active_layer].selected_data)
+
     def get_selected_data(self, name=False, type_=False):
         active_layer = self.viewer.layers.selection.active.name
         data = self.viewer.layers[active_layer].data
@@ -698,4 +738,17 @@ class TardisWidget(QWidget):
             header=["IDs", "X [A]", "Y [A]", "Z [A]"],
             index=False,
             sep=",",
+        )
+
+    def norm_px(self):
+        data, active_layer, type_layer = self.get_selected_data(name=True, type_=True)
+
+        data[:, 1:] = data[:, 1:] / float(self.pixel_size_bt.text())
+
+        create_point_layer(
+            self.viewer,
+            points=data,
+            name=active_layer,
+            visibility=True,
+            as_filament=True if type_layer == "tracks" else False,
         )

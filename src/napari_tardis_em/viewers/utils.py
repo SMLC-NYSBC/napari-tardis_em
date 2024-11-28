@@ -153,7 +153,7 @@ def create_point_layer(
     except Exception as e:
         pass
 
-    viewer.dims.ndisplay = 3
+    # viewer.dims.ndisplay = 3
 
 
 def create_image_layer(

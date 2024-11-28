@@ -8,11 +8,13 @@
 #  MIT License 2024                                                   #
 #######################################################################
 from os.path import splitext, basename
+
+from tardis_em.utils.load_data import ImportDataFromAmira
 from tardis_em.utils.load_data import load_image
 
 import numpy as np
 
-extensions_points = (".csv",)
+extensions_points = (".csv", ".am")
 
 extensions_images = (".rec", ".mrc", ".tiff", ".tif", ".nd2", ".am")
 
@@ -24,9 +26,20 @@ def napari_get_reader(path):
     if not path.endswith(extensions_images) and not path.endswith(extensions_points):
         return None
 
-    if path.endswith(extensions_images):
+    if path.endswith('.am'):
+        try:
+            with open(path, 'r') as f:
+                df = next(f).split(' ')
+        except UnicodeDecodeError:
+            with open(path, 'rb') as f:
+                df = str(next(f)).split(' ')
+
+        if {'ASCII', 'ASCI'}.intersection(df):
+            return reader_function_points
         return reader_function_images
     else:
+        if path.endswith(extensions_images):
+            return reader_function_images
         return reader_function_points
 
 
@@ -61,7 +74,7 @@ def reader_function_points(path):
     # load all files into array
     layer_data = []
     for _path, _name in zip(paths, file_names):
-        data, colors, ids = import_data(_path)
+        data, colors, ids = import_data(_path, coord=True)
 
         layer_type = "tracks"
         t = np.zeros_like(ids)
@@ -83,9 +96,18 @@ def generate_colors(n):
     return colors
 
 
-def import_data(filepath):
-    if filepath.endswith(".csv"):
-        data = np.genfromtxt(filepath, skip_header=1, delimiter=",")
+def import_data(filepath, coord=False):
+    if not coord:
+        img = load_image(filepath, False, False)
+
+        return img
+    else:
+        if filepath.endswith(".csv"):
+            data = np.genfromtxt(filepath, skip_header=1, delimiter=",")
+        elif filepath.endswith(".am"):
+            data = ImportDataFromAmira(filepath).get_segmented_points()
+        else:
+            return
 
         ids = data[:, 0].astype(np.int16)
         data = data[:, 1:]  # data in XYZ format
@@ -106,8 +128,3 @@ def import_data(filepath):
         colors = np.array([color_mapping[uid] for uid in ids])
 
         return data, colors, ids
-    elif filepath.endswith(extensions_images):
-        img = load_image(filepath, False, False)
-
-        return img
-    return
