@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QCheckBox,
 )
+from napari.utils.notifications import show_info
 from qtpy.QtWidgets import QWidget
 
 import numpy as np
@@ -36,6 +37,7 @@ from napari_tardis_em.viewers.utils import create_image_layer, create_point_laye
 from tardis_em.dist_pytorch.utils.utils import pc_median_dist
 from tardis_em.analysis.analysis import analyse_filaments_list
 from tardis_em.utils.load_data import load_image
+from tardis_em.utils.export_data import NumpyToAmira
 from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.analysis.filament_utils import (
     reorder_segments_id,
@@ -226,6 +228,25 @@ class TardisWidget(QWidget):
 
         self.save_edited_instances_bt = QPushButton("Save selected instance file")
         self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
+
+        """
+        Key Binding
+        """
+        self.edit_mode = False
+        self.viewer.bind_key(
+            "e", self.activate_edit
+        )
+
+        self.viewer.bind_key(
+            "b", self.b_event
+        )
+        self.viewer.bind_key(
+            "n", self.n_event
+        )
+        self.viewer.bind_key(
+            "m", self.m_event
+        )
+
         """
         Initialized UI
         """
@@ -270,6 +291,32 @@ class TardisWidget(QWidget):
         layout.addRow("", label_2)
         layout.addRow("Save", self.save_edited_instances_bt)
         self.setLayout(layout)
+
+    def activate_edit(self, viewer):
+        if not self.edit_mode:
+            self.edit_mode = True
+            show_info("Edit mode activated")
+        else:
+            self.edit_mode = False
+            show_info("Edit mode disable")
+
+    def b_event(self, viewer):
+        if self.edit_mode:
+            self.remove_selected_filament()
+        else:
+            return
+
+    def m_event(self, viewer):
+        if self.edit_mode:
+            self.join_selected_filaments()
+        else:
+            return
+
+    def n_event(self, viewer):
+        if self.edit_mode:
+            self.add_new_filament()
+        else:
+            return
 
     def load_directory(self):
         filename = QFileDialog.getExistingDirectory(
@@ -621,9 +668,10 @@ class TardisWidget(QWidget):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         self.point_layer()
 
-        self.viewer.layers[name].feature_defaults["ids"] = (
-            np.max(np.unique(data[:, 0])) + 1
-        )
+        new_id = np.max(np.unique(data[:, 0])) + 1
+        self.viewer.layers[name].feature_defaults["ids"] = new_id
+
+        show_info(f"Adding new filament id: {new_id}")
 
     def remove_filament(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
@@ -641,6 +689,27 @@ class TardisWidget(QWidget):
                 visibility=True,
                 as_filament=True if type_ == "tracks" else False,
             )
+            show_info(f"Removed filament id: {id_to_remove}")
+        else:
+            return
+
+    def remove_selected_filament(self):
+        data, name, type_ = self.get_selected_data(name=True, type_=True)
+        indices = self.get_selected_ids()
+        indices = list(np.unique(data[indices, 0]))
+
+        if len(indices) != 0:
+            for i in indices:
+                data = data[~np.isin(data[:, 0], [i])]
+            data = reorder_segments_id(data)
+            create_point_layer(
+                viewer=self.viewer,
+                points=data,
+                name=name,
+                visibility=True,
+                as_filament=True if type_ == "tracks" else False,
+            )
+            show_info(f"Removed filament ids: {indices}")
         else:
             return
 
@@ -673,6 +742,7 @@ class TardisWidget(QWidget):
                 visibility=True,
                 as_filament=True if type_ == "tracks" else False,
             )
+            show_info(f"Joined filament ids: {id_1_to_join} and {id_2_to_join}")
         else:
             return
 
@@ -702,6 +772,7 @@ class TardisWidget(QWidget):
             visibility=True,
             as_filament=True if type_ == "tracks" else False,
         )
+        show_info(f"Joined filament ids: {indices}")
 
     def get_selected_ids(self):
         active_layer = self.viewer.layers.selection.active.name
@@ -730,15 +801,33 @@ class TardisWidget(QWidget):
 
     def save_edited_instances(self):
         data = self.get_selected_data()
+
         name_ = splitext(self.select_data_view.currentText())[0]
-        f_name = name_ + f"_{self.nd2_current_frame}" + "_instances_filter.csv"
-        segments = pd.DataFrame(data)
-        segments.to_csv(
-            join(self.dir, "Predictions", f_name),
-            header=["IDs", "X [A]", "Y [A]", "Z [A]"],
-            index=False,
-            sep=",",
+        f_name = name_ + f"_{self.nd2_current_frame}" + "_instances_filter"
+
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        filename, f_format = QFileDialog.getSaveFileName(
+            caption="Save Files",
+            directory=join(getcwd(), f_name),
+            filter="CSV File (*.csv);;Amira Files (*.am)",
+            options=options
         )
+
+        if f_format == "CSV File (*.csv)":
+            f_name = filename
+            segments = pd.DataFrame(data)
+            segments.to_csv(
+                join(self.dir, "Predictions", f_name),
+                header=["IDs", "X [A]", "Y [A]", "Z [A]"],
+                index=False,
+                sep=",",
+            )
+        else:
+            f_name = filename
+            amira = NumpyToAmira()
+            amira.export_amira(file_dir=f_name,
+                               coords=data)
 
     def norm_px(self):
         data, active_layer, type_layer = self.get_selected_data(name=True, type_=True)
