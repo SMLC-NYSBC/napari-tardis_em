@@ -668,7 +668,7 @@ class TardisWidget(QWidget):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         self.point_layer()
 
-        new_id = np.max(np.unique(data[:, 0])) + 1
+        new_id = int(np.max(np.unique(data[:, 0])) + 1)
         self.viewer.layers[name].feature_defaults["ids"] = new_id
 
         show_info(f"Adding new filament id: {new_id}")
@@ -677,41 +677,41 @@ class TardisWidget(QWidget):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         id_to_remove = self.filament_id_rm.text()
 
-        if id_to_remove != "None":
-            id_to_remove = int(id_to_remove)
-            data = data[~np.isin(data[:, 0], [id_to_remove])]
-
-            data = reorder_segments_id(data)
-            create_point_layer(
-                viewer=self.viewer,
-                points=data,
-                name=name,
-                visibility=True,
-                as_filament=True if type_ == "tracks" else False,
-            )
-            show_info(f"Removed filament id: {id_to_remove}")
-        else:
+        if id_to_remove == "None":
             return
+
+        id_to_remove = int(id_to_remove)
+        data = data[~np.isin(data[:, 0], [id_to_remove])]
+
+        data = reorder_segments_id(data)
+        create_point_layer(
+            viewer=self.viewer,
+            points=data,
+            name=name,
+            visibility=True,
+            as_filament=True if type_ == "tracks" else False,
+        )
+        show_info(f"Removed filament id: {id_to_remove}")
 
     def remove_selected_filament(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         indices = self.get_selected_ids()
-        indices = list(np.unique(data[indices, 0]))
+        indices = [int(i) for i in np.unique(data[indices, 0])]
 
-        if len(indices) != 0:
-            for i in indices:
-                data = data[~np.isin(data[:, 0], [i])]
-            data = reorder_segments_id(data)
-            create_point_layer(
-                viewer=self.viewer,
-                points=data,
-                name=name,
-                visibility=True,
-                as_filament=True if type_ == "tracks" else False,
-            )
-            show_info(f"Removed filament ids: {indices}")
-        else:
+        if len(indices) == 0:
             return
+
+        for i in indices:
+            data = data[~np.isin(data[:, 0], [i])]
+        data = reorder_segments_id(data)
+        create_point_layer(
+            viewer=self.viewer,
+            points=data,
+            name=name,
+            visibility=True,
+            as_filament=True if type_ == "tracks" else False,
+        )
+        show_info(f"Removed filament ids: {indices}")
 
     def join_filaments(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
@@ -721,6 +721,8 @@ class TardisWidget(QWidget):
         if id_1_to_join != "None" and id_2_to_join != "None":
             id_1_to_join = int(id_1_to_join)
             id_2_to_join = int(id_2_to_join)
+            if id_1_to_join == id_2_to_join:
+                return
 
             joined = data[np.isin(data[:, 0], [id_1_to_join, id_2_to_join]), 1:]
             joined = sort_segment(joined)
@@ -734,6 +736,7 @@ class TardisWidget(QWidget):
             data = np.concatenate((data, joined))
 
             data = sort_by_length(reorder_segments_id(data))
+            data = resample_filament(data, 5)
 
             create_point_layer(
                 viewer=self.viewer,
@@ -749,7 +752,12 @@ class TardisWidget(QWidget):
     def join_selected_filaments(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         indices = self.get_selected_ids()
-        indices = list(np.unique(data[indices, 0]))
+        indices = [int(i) for i in np.unique(data[indices, 0])]
+
+        if len(indices) <= 1:
+            return
+
+        px = np.ceil(25 / float(self.pixel_size_bt.text()))
 
         joined = data[np.isin(data[:, 0], indices), 1:]
         joined = sort_segment(joined)
@@ -760,10 +768,9 @@ class TardisWidget(QWidget):
         joined = np.array((next_id, joined[:, 0], joined[:, 1], joined[:, 2])).T
 
         data = data[~np.isin(data[:, 0], indices)]
-        data = np.concatenate((data, joined))
+        data = np.concatenate((data, resample_filament(joined, px)))
 
         data = sort_by_length(reorder_segments_id(data))
-        data = resample_filament(data, int(pc_median_dist(data[:, 1:])))
 
         create_point_layer(
             viewer=self.viewer,
@@ -813,20 +820,23 @@ class TardisWidget(QWidget):
             filter="CSV File (*.csv);;Amira Files (*.am)",
             options=options
         )
+        filename = os.path.splitext(filename)[0]
 
         if f_format == "CSV File (*.csv)":
-            f_name = filename
+            filename = filename + '.csv'
+
             segments = pd.DataFrame(data)
             segments.to_csv(
-                join(self.dir, "Predictions", f_name),
+                join(self.dir, "Predictions", filename),
                 header=["IDs", "X [A]", "Y [A]", "Z [A]"],
                 index=False,
                 sep=",",
             )
         else:
-            f_name = filename
+            filename = filename + '.am'
+
             amira = NumpyToAmira()
-            amira.export_amira(file_dir=f_name,
+            amira.export_amira(file_dir=filename,
                                coords=data)
 
     def norm_px(self):
