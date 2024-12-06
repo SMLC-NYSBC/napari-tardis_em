@@ -226,6 +226,9 @@ class TardisWidget(QWidget):
         self.join_selected_filaments_bt.setMinimumWidth(225)
         self.join_selected_filaments_bt.clicked.connect(self.join_selected_filaments)
 
+        self.resample_bt = QPushButton("Resample to 25 A spacing")
+        self.resample_bt.clicked.connect(self.resample)
+
         self.save_edited_instances_bt = QPushButton("Save selected instance file")
         self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
 
@@ -289,6 +292,7 @@ class TardisWidget(QWidget):
         layout.addRow("", self.join_selected_filaments_bt)
 
         layout.addRow("", label_2)
+        layout.addRow("", self.resample_bt)
         layout.addRow("Save", self.save_edited_instances_bt)
         self.setLayout(layout)
 
@@ -668,7 +672,10 @@ class TardisWidget(QWidget):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
         self.point_layer()
 
-        new_id = int(np.max(np.unique(data[:, 0])) + 1)
+        if len(data) == 0:
+            new_id = 1
+        else:
+            new_id = int(np.max(np.unique(data[:, 0])) + 1)
         self.viewer.layers[name].feature_defaults["ids"] = new_id
 
         show_info(f"Adding new filament id: {new_id}")
@@ -736,7 +743,6 @@ class TardisWidget(QWidget):
             data = np.concatenate((data, joined))
 
             data = sort_by_length(reorder_segments_id(data))
-            data = resample_filament(data, 5)
 
             create_point_layer(
                 viewer=self.viewer,
@@ -757,8 +763,6 @@ class TardisWidget(QWidget):
         if len(indices) <= 1:
             return
 
-        px = np.ceil(25 / float(self.pixel_size_bt.text()))
-
         joined = data[np.isin(data[:, 0], indices), 1:]
         joined = sort_segment(joined)
 
@@ -768,7 +772,7 @@ class TardisWidget(QWidget):
         joined = np.array((next_id, joined[:, 0], joined[:, 1], joined[:, 2])).T
 
         data = data[~np.isin(data[:, 0], indices)]
-        data = np.concatenate((data, resample_filament(joined, px)))
+        data = np.concatenate((data, joined))
 
         data = sort_by_length(reorder_segments_id(data))
 
@@ -794,8 +798,12 @@ class TardisWidget(QWidget):
             data = np.array((data[:, 0], data[:, 4], data[:, 3], data[:, 2])).T
             type_layer = "tracks"
         else:
-            ids = self.viewer.layers[active_layer].properties["ids"]
-            data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
+            try:
+                ids = self.viewer.layers[active_layer].properties["ids"]
+                data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
+            except KeyError:
+                data = np.zeros((0, 4))
+
             type_layer = "points"
 
         if name:
@@ -851,3 +859,17 @@ class TardisWidget(QWidget):
             visibility=True,
             as_filament=True if type_layer == "tracks" else False,
         )
+
+    def resample(self):
+        data, name, type_ = self.get_selected_data(name=True, type_=True)
+
+        px = np.ceil(25 / float(self.pixel_size_bt.text()))
+        data = resample_filament(data, px)
+        create_point_layer(
+            viewer=self.viewer,
+            points=data,
+            name=name,
+            visibility=True,
+            as_filament=True if type_ == "tracks" else False,
+        )
+        show_info("Resampled all filament with 25A spacing.")
