@@ -676,7 +676,10 @@ class TardisWidget(QWidget):
             new_id = 1
         else:
             new_id = int(np.max(np.unique(data[:, 0])) + 1)
+            self.resample()
+
         self.viewer.layers[name].feature_defaults["ids"] = new_id
+        self.viewer.layers[name].mode = "add"
 
         show_info(f"Adding new filament id: {new_id}")
 
@@ -864,6 +867,7 @@ class TardisWidget(QWidget):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
 
         px = np.ceil(25 / float(self.pixel_size_bt.text()))
+        data = sort_segments(data)
         data = resample_filament(data, px)
         create_point_layer(
             viewer=self.viewer,
