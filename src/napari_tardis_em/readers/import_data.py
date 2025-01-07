@@ -26,15 +26,15 @@ def napari_get_reader(path):
     if not path.endswith(extensions_images) and not path.endswith(extensions_points):
         return None
 
-    if path.endswith('.am'):
+    if path.endswith(".am"):
         try:
-            with open(path, 'r') as f:
-                df = next(f).split(' ')
+            with open(path, "r") as f:
+                df = next(f).split(" ")
         except UnicodeDecodeError:
-            with open(path, 'rb') as f:
-                df = str(next(f)).split(' ')
+            with open(path, "rb") as f:
+                df = str(next(f)).split(" ")
 
-        if {'ASCII', 'ASCI'}.intersection(df):
+        if {"ASCII", "ASCI"}.intersection(df):
             return reader_function_points
         return reader_function_images
     else:

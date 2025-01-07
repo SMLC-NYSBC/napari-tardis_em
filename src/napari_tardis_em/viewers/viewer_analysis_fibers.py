@@ -235,19 +235,11 @@ class TardisWidget(QWidget):
         Key Binding
         """
         self.edit_mode = False
-        self.viewer.bind_key(
-            "e", self.activate_edit
-        )
+        self.viewer.bind_key("e", self.activate_edit)
 
-        self.viewer.bind_key(
-            "b", self.b_event
-        )
-        self.viewer.bind_key(
-            "n", self.n_event
-        )
-        self.viewer.bind_key(
-            "m", self.m_event
-        )
+        self.viewer.bind_key("b", self.b_event)
+        self.viewer.bind_key("n", self.n_event)
+        self.viewer.bind_key("m", self.m_event)
 
         """
         Initialized UI
@@ -828,12 +820,12 @@ class TardisWidget(QWidget):
             caption="Save Files",
             directory=join(getcwd(), f_name),
             filter="CSV File (*.csv);;Amira Files (*.am)",
-            options=options
+            options=options,
         )
         filename = os.path.splitext(filename)[0]
 
         if f_format == "CSV File (*.csv)":
-            filename = filename + '.csv'
+            filename = filename + ".csv"
 
             segments = pd.DataFrame(data)
             segments.to_csv(
@@ -843,11 +835,10 @@ class TardisWidget(QWidget):
                 sep=",",
             )
         else:
-            filename = filename + '.am'
+            filename = filename + ".am"
 
             amira = NumpyToAmira()
-            amira.export_amira(file_dir=filename,
-                               coords=data)
+            amira.export_amira(file_dir=filename, coords=data)
 
     def norm_px(self):
         data, active_layer, type_layer = self.get_selected_data(name=True, type_=True)
