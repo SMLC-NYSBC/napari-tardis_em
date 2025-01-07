@@ -8,6 +8,7 @@
 #  MIT License 2024                                                   #
 #######################################################################
 from os import getcwd
+import os
 
 import numpy as np
 import torch
@@ -355,7 +356,7 @@ class TardisWidget(QWidget):
             for i in filename.split("/")
             if not i.endswith((".mrc", ".rec", ".map", ".tif", ".tiff", ".am"))
         ]
-        self.out_ = os.path.dirname(file_path[0])
+        self.out_ = os.path.dirname(filename)
 
         self.output.setText(f"...{self.out_[-17:]}/Predictions/")
         self.output_folder = f"...{self.out_}/Predictions/"

@@ -854,6 +854,7 @@ class TardisWidget(QWidget):
             f"{co}"
             f"{b}"
             f"{cl}"
+            f"{ck}"
             f"{cm}"
             f"{cs}"
             f"{cp}"

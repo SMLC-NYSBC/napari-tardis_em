@@ -10,7 +10,7 @@
 from os import mkdir, listdir, getcwd
 from os.path import join, isdir
 from shutil import rmtree
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 
 import numpy as np
 from PyQt5.QtWidgets import QFileDialog
@@ -227,7 +227,7 @@ def setup_environment_and_dataset(
     TEST_MASK_DIR = join(dir_, "test", "masks")
 
     DATASET_TEST = check_dir(
-        dir_=dir_,
+        dir_s=dir_,
         with_img=True,
         train_img=TRAIN_IMAGE_DIR,
         train_mask=TRAIN_MASK_DIR,

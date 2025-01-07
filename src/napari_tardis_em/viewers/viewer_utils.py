@@ -164,7 +164,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
 
     predictor = GeneralPredictor(
         predict=model_params["predict_type"],
-        dir_=dir_,
+        dir_s=dir_,
         binary_mask=model_params["mask"],
         correct_px=model_params["correct_px"],
         normalize_px=model_params["normalize_px"],
@@ -184,7 +184,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
         amira_compare_distance=model_params["amira_compare_distance"],
         amira_inter_probability=model_params["amira_inter_probability"],
         instances=instances,
-        device_=model_params["device"],
+        device_s=model_params["device"],
         debug=False,
         tardis_logo=False,
     )

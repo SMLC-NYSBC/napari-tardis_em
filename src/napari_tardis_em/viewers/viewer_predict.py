@@ -567,7 +567,7 @@ class TardisWidget(QWidget):
                             f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)"
                         )
                         self.predictor.save_instance_PC(self.dir.split("/")[-1])
-                        clean_up(dir_=self.dir)
+                        clean_up(dir_s=self.dir)
                     show_info("Finished Instance Prediction !")
 
             worker = predict_dist()

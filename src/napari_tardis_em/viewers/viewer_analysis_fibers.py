@@ -34,7 +34,6 @@ from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
 
-from tardis_em.dist_pytorch.utils.utils import pc_median_dist
 from tardis_em.analysis.analysis import analyse_filaments_list
 from tardis_em.utils.load_data import load_image
 from tardis_em.utils.export_data import NumpyToAmira
@@ -383,7 +382,7 @@ class TardisWidget(QWidget):
             return
 
         name_ = self.select_data_view.currentText()
-        img = load_image(join(self.dir, name_), px_=False)
+        img = load_image(join(self.dir, name_), px=False)
         range_ = (
             (np.min(img[0, 0, 0, ...]), np.max(img[0, 0, 0, ...]))
             if name_.endswith(".nd2")
@@ -432,7 +431,7 @@ class TardisWidget(QWidget):
             if self.nd2_list is None:
                 mask = load_image(
                     join(self.dir, "Predictions", splitext(name_)[0] + "_semantic.tif"),
-                    px_=False,
+                    px=False,
                 )
             else:
                 mask = np.zeros(img.shape, dtype=np.uint8)
@@ -444,7 +443,7 @@ class TardisWidget(QWidget):
                             "Predictions",
                             splitext(name_)[0] + f"_{i}" + "_semantic.tif",
                         ),
-                        px_=False,
+                        px=False,
                     )
                     mask[:, i, :, ...] = mask_array
         elif is_mask_mrc:
@@ -455,7 +454,7 @@ class TardisWidget(QWidget):
                         "Predictions",
                         splitext(name_)[0] + f"_0" + "_semantic.mrc",
                     ),
-                    px_=False,
+                    px=False,
                 )
             else:
                 mask = load_image(
@@ -464,7 +463,7 @@ class TardisWidget(QWidget):
                         "Predictions",
                         splitext(name_)[0] + nd2_in + "_semantic.mrc",
                     ),
-                    px_=False,
+                    px=False,
                 )  # Y, Z
                 dir_list = [
                     i
@@ -480,7 +479,7 @@ class TardisWidget(QWidget):
                             "Predictions",
                             splitext(name_)[0] + f"_{i}" + "_semantic.mrc",
                         ),
-                        px_=False,
+                        px=False,
                     )
 
         if is_instance:
@@ -528,7 +527,7 @@ class TardisWidget(QWidget):
         workflow = self.workflow.currentText()
         predictor = GeneralPredictor(
             predict=workflow,
-            dir_=self.dir,
+            dir_s=self.dir,
             binary_mask=False,
             correct_px=None,
             normalize_px=1.0 if workflow == "Microtubule_tirf" else None,
@@ -548,7 +547,7 @@ class TardisWidget(QWidget):
             amira_compare_distance=None,
             amira_inter_probability=None,
             instances=True,
-            device_=self.device.currentText(),
+            device_s=self.device.currentText(),
             debug=False,
         )
 
@@ -583,19 +582,19 @@ class TardisWidget(QWidget):
         if T is not None:
             analyse_filaments_list(
                 data=[data for _ in range(T)],
-                names_=[splitext(name_)[0] + f"_{i}" for i in range(T)],
+                names_l=[splitext(name_)[0] + f"_{i}" for i in range(T)],
                 path=join(self.dir, "Predictions", "Analysis"),
                 images=[img[dim_, frame_, i, ...] for i in range(T)],
-                px_=pixel_size,
+                px=pixel_size,
                 thickness=int(self.thickness_bt.currentText()),
             )
         else:
             analyse_filaments_list(
                 data=[data],
-                names_=[splitext(name_)[0] + f"_{frame_}"],
+                names_l=[splitext(name_)[0] + f"_{frame_}"],
                 path=join(self.dir, "Predictions", "Analysis"),
                 images=[img[dim_, frame_, 0, ...]] if img is not None else None,
-                px_=pixel_size,
+                px=pixel_size,
                 thickness=int(self.thickness_bt.currentText()),
             )
 
