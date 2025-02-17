@@ -102,10 +102,16 @@ def create_point_layer(
         visibility (bool):
         as_filament (bool):
     """
+    current_center = viewer.camera.center
+    current_orient = viewer.camera.angles
+    current_zoom = viewer.camera.zoom
+
     try:
-        viewer.layers.remove(name)
-    except Exception as e:
-        pass
+        size_ = viewer.layers[name].current_size
+    except AttributeError:
+        size_ = 10
+
+    viewer.layers.remove(name)
 
     point_features = {
         "ids": tuple(points[:, 0].flatten()),
@@ -130,8 +136,10 @@ def create_point_layer(
             face_color="ids",
             face_colormap=face_colormap,
             visible=visibility,
-            size=10,
+            size=size_,
+            out_of_slice_display=True,
         )
+        print(size_)
     else:
         t = np.zeros_like(ids)
         points = np.vstack((ids, t, points[:, 0], points[:, 1], points[:, 2])).T
@@ -143,6 +151,10 @@ def create_point_layer(
             colormap="hsv",
         )
 
+    viewer.camera.center = current_center
+    viewer.camera.zoom = current_zoom
+    viewer.camera.angles = current_orient
+
     try:
         viewer.layers["Predicted_Instances"].visible = True
     except Exception as e:
@@ -152,8 +164,6 @@ def create_point_layer(
         viewer.layers["Predicted_Instances_filter"].visible = True
     except Exception as e:
         pass
-
-    # viewer.dims.ndisplay = 3
 
 
 def create_image_layer(
