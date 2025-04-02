@@ -29,10 +29,11 @@ from qtpy.QtWidgets import QWidget
 
 import numpy as np
 
-from napari_tardis_em.viewers import IMG_FORMAT
+from napari_tardis_em.viewers import IMG_FORMAT, CheckableComboBox
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
-from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
+from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer, convert_to_float, \
+    frames_phase_correlation
 
 from tardis_em.analysis.analysis import analyse_filaments_list
 from tardis_em.utils.load_data import load_image
@@ -54,6 +55,11 @@ class TardisWidget(QWidget):
     Plugin integrate TARDIS-em and allow to easily set up training. To make it more
     user-friendly, this plugin guid user what to do, and during training display
      results from validation loop.
+
+      ToDo:
+        - Colocalization of a signal in multiple channels | Select multiple channels and see if the signal is correlated
+            - Sub-point output also a data for Intesity over MT distance.
+        - Translation for channels, when in Movie. Some frames are moved we need some way to smartly translate the entire mask in XY to fix signal
     """
 
     def __init__(self, viewer_mt_tirf: Viewer):
@@ -89,9 +95,6 @@ class TardisWidget(QWidget):
         self.no_instances = QCheckBox()
         self.no_instances.setCheckState(2)
 
-        self.norm_px_bt = QPushButton("Normalize")
-        self.norm_px_bt.clicked.connect(self.norm_px)
-
         self.select_data_view = QComboBox()
         self.select_data_view.addItems(
             [
@@ -100,9 +103,24 @@ class TardisWidget(QWidget):
         )
         self.select_data_view.currentTextChanged.connect(self.view_selected_data)
 
-        self.thickness_bt = QComboBox()
-        self.thickness_bt.addItems(["1", "3", "5", "7", "9"])
-        self.thickness_bt.setCurrentIndex(1)
+        self.analysis_ch = QComboBox()
+        self.analysis_ch.addItems(
+            [
+                "0",
+            ]
+        )
+
+        self.stabilize_button = QPushButton("Stabilize movie")
+        self.stabilize_button.setMinimumWidth(225)
+        self.stabilize_button.clicked.connect(self.stabilize_movie)
+
+        self.thickness_bt1 = QComboBox()
+        self.thickness_bt1.addItems(["1", "3", "5", "7", "9"])
+        self.thickness_bt1.setCurrentIndex(1)
+
+        self.thickness_bt2 = QComboBox()
+        self.thickness_bt2.addItems(["1", "3", "5", "7", "9"])
+        self.thickness_bt2.setCurrentIndex(1)
 
         ##############################
         # Setting user should change #
@@ -110,33 +128,12 @@ class TardisWidget(QWidget):
         label_2 = QLabel("                                      ")
         label_2.setStyleSheet(border_style("green"))
 
-        self.workflow = QComboBox()
-        self.workflow.addItems(
-            [
-                "Actin",
-                "Microtubule",
-                "Microtubule_tirf",
-            ]
-        )
-        self.workflow.setToolTip("Select workflow.")
-        self.workflow.setCurrentIndex(1)
-
-        self.output_semantic = QComboBox()
-        self.output_semantic.addItems(["mrc", "tif", "npy", "am"])
-        self.output_semantic.setToolTip("Select semantic output format file.")
-        self.output_semantic.setCurrentIndex(1)
-
-        self.output_instance = QComboBox()
-        self.output_instance.addItems(["None", "csv", "npy", "amSG", "mrc"])
-        self.output_instance.setToolTip("Select instance output format file.")
-        self.output_instance.setCurrentIndex(1)
-
         self.cnn_threshold = QDoubleSpinBox()
         self.cnn_threshold.setDecimals(2)
         self.cnn_threshold.setMinimum(0)
         self.cnn_threshold.setMaximum(1)
         self.cnn_threshold.setSingleStep(0.01)
-        self.cnn_threshold.setValue(0.25)
+        self.cnn_threshold.setValue(0.10)
         self.cnn_threshold.setToolTip(
             "Threshold value for binary prediction. Lower value will increase \n"
             "recall [retrieve more of predicted object] but also may increase \n"
@@ -146,7 +143,6 @@ class TardisWidget(QWidget):
             "If selected 0.0 - Output probability mask \n"
             "If selected 1.0 - Use adaptive threshold."
         )
-        self.workflow.currentIndexChanged.connect(self.update_cnn_threshold)
 
         self.dist_threshold = QDoubleSpinBox()
         self.dist_threshold.setDecimals(2)
@@ -171,13 +167,6 @@ class TardisWidget(QWidget):
         self.pixel_size_bt = QLineEdit("1.0")
         self.pixel_size_bt.setToolTip("Select correct pixel size for analysis")
 
-        self.analysis_ch = QComboBox()
-        self.analysis_ch.addItems(
-            [
-                "0",
-            ]
-        )
-
         label_run = QLabel("Start Prediction                 ")
         label_run.setStyleSheet(border_style("blue"))
 
@@ -185,9 +174,26 @@ class TardisWidget(QWidget):
         self.predict_1_button.setMinimumWidth(225)
         self.predict_1_button.clicked.connect(self.predict_workflow)
 
-        self.predict_2_button = QPushButton("Re-analyse...")
+        self.predict_2_button = QPushButton("Analyse frames...")
         self.predict_2_button.setMinimumWidth(225)
         self.predict_2_button.clicked.connect(self.re_analise_data)
+
+        self.predict_3_button = QPushButton("Analyse movies...")
+        self.predict_3_button.setMinimumWidth(225)
+        self.predict_3_button.clicked.connect(self.re_analise_data_movies)
+
+        self.analysis_list = CheckableComboBox()
+        self.analysis_list.addItems(
+            [
+                "length",
+                "curvature",
+                "tortuosity",
+                "avg_intensity",
+                "avg_length_intensity",
+                "sum_intensity",
+                "sum_length_intensity",
+            ]
+        )
 
         self.add_new_filament_bt = QPushButton("Add new filament")
         self.add_new_filament_bt.setMinimumWidth(225)
@@ -225,9 +231,6 @@ class TardisWidget(QWidget):
         self.join_selected_filaments_bt.setMinimumWidth(225)
         self.join_selected_filaments_bt.clicked.connect(self.join_selected_filaments)
 
-        self.resample_bt = QPushButton("Resample to 25 A spacing")
-        self.resample_bt.clicked.connect(self.resample)
-
         self.save_edited_instances_bt = QPushButton("Save selected instance file")
         self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
 
@@ -248,22 +251,23 @@ class TardisWidget(QWidget):
         layout.addRow("Select Directory", self.directory)
         layout.addRow("Show Instances if possible", self.no_instances)
         layout.addRow("Select Image", self.select_data_view)
-        layout.addRow("Normalize to pixel size", self.norm_px_bt)
+
+        layout.addRow("Analysis Channel", self.analysis_ch)
+        layout.addRow("", self.stabilize_button)
 
         layout.addRow("---- Workflow ----", label_2)
         layout.addRow("Pixel size", self.pixel_size_bt)
-        layout.addRow("Workflow type", self.workflow)
-        layout.addRow("Semantic output", self.output_semantic)
-        layout.addRow("Instance output", self.output_instance)
         layout.addRow("CNN threshold", self.cnn_threshold)
         layout.addRow("DIST threshold", self.dist_threshold)
         layout.addRow("Device", self.device)
 
         layout.addRow("---- Run Prediction -----", label_run)
-        layout.addRow("Analysis Channel", self.analysis_ch)
-        layout.addRow("Line Thickness", self.thickness_bt)
+        layout.addRow("Line Thickness Image", self.thickness_bt1)
+        layout.addRow("Line Thickness Mask", self.thickness_bt2)
         layout.addRow("", self.predict_1_button)
         layout.addRow("", self.predict_2_button)
+        layout.addRow("", self.predict_3_button)
+        layout.addRow("", self.analysis_list)
 
         layout.addRow("---- Correct-filaments ----", label_2)
         layout.addRow("Select nd2 frame", self.nd2_file_frame_bt)
@@ -283,7 +287,6 @@ class TardisWidget(QWidget):
         layout.addRow("", self.join_selected_filaments_bt)
 
         layout.addRow("", label_2)
-        layout.addRow("", self.resample_bt)
         layout.addRow("Save", self.save_edited_instances_bt)
         self.setLayout(layout)
 
@@ -409,15 +412,29 @@ class TardisWidget(QWidget):
         is_mask_mrc = isfile(
             join(self.dir, "Predictions", splitext(name_)[0] + nd2_in + "_semantic.mrc")
         )
+
         is_instance = isfile(
+            join(
+                self.dir,
+                "Predictions",
+                splitext(name_)[0] + nd2_in + "_instances.csv",
+            )
+        )
+
+        is_instance_filter = isfile(
             join(
                 self.dir,
                 "Predictions",
                 splitext(name_)[0] + nd2_in + "_instances_filter.csv",
             )
         )
+
+        if is_instance_filter:
+            is_instance = False
+
         if self.no_instances.checkState() != 2:
             is_instance = False
+            is_instance_filter = False
 
         if is_mask_tif:
             if self.nd2_list is None:
@@ -480,6 +497,29 @@ class TardisWidget(QWidget):
                     join(
                         self.dir,
                         "Predictions",
+                        splitext(name_)[0] + "_instances.csv",
+                    ),
+                    delimiter=",",
+                    skip_header=1,
+                )
+            else:
+                id_ = f"_{self.nd2_file_frame_bt.currentText()}"
+                instance = np.genfromtxt(
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + id_ + "_instances.csv",
+                    ),
+                    delimiter=",",
+                    skip_header=1,
+                )
+
+        if is_instance_filter:
+            if self.nd2_list is None:
+                instance = np.genfromtxt(
+                    join(
+                        self.dir,
+                        "Predictions",
                         splitext(name_)[0] + "_instances_filter.csv",
                     ),
                     delimiter=",",
@@ -516,26 +556,25 @@ class TardisWidget(QWidget):
             )
 
     def predict_workflow(self):
-        workflow = self.workflow.currentText()
         predictor = GeneralPredictor(
-            predict=workflow,
+            predict="Microtubule_tirf",
             dir_s=self.dir,
             binary_mask=False,
             correct_px=None,
-            normalize_px=1.0 if workflow == "Microtubule_tirf" else None,
+            normalize_px=1.0,
             convolution_nn="fnet_attn",
             checkpoint=[None, None],
             model_version=None,
             output_format="tif_csv",
-            patch_size=256 if workflow == "Microtubule_tirf" else 96,
+            patch_size=256,
             cnn_threshold=self.cnn_threshold.text(),
-            dist_threshold=float(self.dist_threshold.text()),
+            dist_threshold=convert_to_float(self.dist_threshold.text()),
             points_in_patch=900,
             predict_with_rotation=True,
             amira_prefix=None,
-            filter_by_length=100 if workflow == "Microtubule_tirf" else 1000,
-            connect_splines=25 if workflow == "Microtubule_tirf" else 2500,
-            connect_cylinder=12 if workflow == "Microtubule_tirf" else 250,
+            filter_by_length=100,
+            connect_splines=25,
+            connect_cylinder=12,
             amira_compare_distance=None,
             amira_inter_probability=None,
             instances=True,
@@ -555,14 +594,61 @@ class TardisWidget(QWidget):
         data = sort_segments(data)
         data = sort_by_length(reorder_segments_id(data))
 
-        T, img = None, None
+        analysis_list = self.analysis_list.currentData()
+
+        img = None
         if name_.endswith(".nd2"):
             img = self.viewer.layers[splitext(name_)[0]].data
-            T = img.shape[2]
-        if T == 1:
-            T = None
 
-        pixel_size = float(self.pixel_size_bt.text())
+        pixel_size = convert_to_float(self.pixel_size_bt.text())
+        if pixel_size == 1.0:
+            pixel_size = None
+        else:
+            pixel_size = [pixel_size]
+        analyse_filaments_list(
+            data=[data],
+            names_l=[splitext(name_)[0] + f"_{frame_}"],
+            path=join(self.dir, "Predictions", "Analysis"),
+            images=[img[dim_, frame_, ...]] if img is not None else None,
+            px=pixel_size,
+            thicknesses=[
+                int(self.thickness_bt1.currentText()),
+                int(self.thickness_bt2.currentText()),
+            ],
+            anal_list=analysis_list,
+        )
+
+        # # Co-localization
+        # if "colocalize" in analysis_list:
+        #     if img.shape[0] > 2:
+        #         pass
+
+    def re_analise_data_movies(self):
+        name_ = self.select_data_view.currentText()
+        frame_ = self.nd2_current_frame
+        dim_ = int(self.analysis_ch.currentText())
+        analysis_list = self.analysis_list.currentData()
+
+        try:
+            data = self.viewer.layers[splitext(name_)[0] + "_instance"].data
+            if data.shape[1] == 5:
+                data = np.array((data[:, 0], data[:, 4], data[:, 3], data[:, 2])).T
+            else:
+                try:
+                    ids = self.viewer.layers[splitext(name_)[0] + "_instance"].properties["ids"]
+                    data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
+                except KeyError:
+                    data = np.zeros((0, 4))
+        except AttributeError:
+            return
+
+        data = sort_segments(data)
+        data = sort_by_length(reorder_segments_id(data))
+
+        image = self.viewer.layers[splitext(name_)[0]].data
+        T = image.shape[2]  # No. of time points
+
+        pixel_size = convert_to_float(self.pixel_size_bt.text())
         if pixel_size == 1.0:
             pixel_size = None
         else:
@@ -571,30 +657,32 @@ class TardisWidget(QWidget):
             else:
                 pixel_size = [pixel_size]
 
-        if T is not None:
-            analyse_filaments_list(
-                data=[data for _ in range(T)],
-                names_l=[splitext(name_)[0] + f"_{i}" for i in range(T)],
-                path=join(self.dir, "Predictions", "Analysis"),
-                images=[img[dim_, frame_, i, ...] for i in range(T)],
-                px=pixel_size,
-                thickness=int(self.thickness_bt.currentText()),
-            )
-        else:
-            analyse_filaments_list(
-                data=[data],
-                names_l=[splitext(name_)[0] + f"_{frame_}"],
-                path=join(self.dir, "Predictions", "Analysis"),
-                images=[img[dim_, frame_, 0, ...]] if img is not None else None,
-                px=pixel_size,
-                thickness=int(self.thickness_bt.currentText()),
-            )
+        analyse_filaments_list(
+            data=[data for _ in range(T)],
+            names_l=[splitext(name_)[0] + f"_{i}" for i in range(T)],
+            path=join(self.dir, "Predictions", "Analysis"),
+            images=[image[dim_, frame_, i, ...] for i in range(T)],
+            px=pixel_size,
+            anal_list=analysis_list,
+            thicknesses=[
+                int(self.thickness_bt1.currentText()),
+                int(self.thickness_bt2.currentText()),
+            ],
+        )
+        # # Co-localization
+        # if "colocalize" in analysis_list:
+        #     """
+        #     - Get all channels, and dim_ as a changel to which we colocalizing
+        #     - get thicness from bt1 and bt2 as the bigger one
+        #     - For each frame_
+        #         - for each MT
+        #             - For each Time point
+        #                 - extract MT track on all channels
+        #                 - Compute co-localized signal between all channels
+        #                 - append resoults
+        #     """
+        #     pass
 
-    def update_cnn_threshold(self):
-        if self.workflow.currentText() == "Microtubule_tirf":
-            self.cnn_threshold.setValue(0.1)
-        else:
-            self.cnn_threshold.setValue(0.25)
 
     def nd2_file_frame(self):
         self.nd2_update = True
@@ -609,11 +697,15 @@ class TardisWidget(QWidget):
     def nd2_file_frame_change(self):
         if not self.nd2_update:
             name_ = self.select_data_view.currentText()
-            self.save_edited_instances()
+            try:
+                self.save_edited_instances()
+            except AttributeError:
+                pass
             self.nd2_current_frame = int(self.nd2_file_frame_bt.currentText())
 
             id_ = f"_{self.nd2_file_frame_bt.currentText()}"
-            instance = np.genfromtxt(
+            try:
+                instance = np.genfromtxt(
                 join(
                     self.dir,
                     "Predictions",
@@ -621,7 +713,17 @@ class TardisWidget(QWidget):
                 ),
                 delimiter=",",
                 skip_header=1,
-            )
+                )
+            except FileNotFoundError:
+                instance = np.genfromtxt(
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + id_ + "_instances.csv",
+                    ),
+                    delimiter=",",
+                    skip_header=1,
+                )
 
             create_point_layer(
                 self.viewer,
@@ -783,9 +885,12 @@ class TardisWidget(QWidget):
         active_layer = self.viewer.layers.selection.active.name
         return list(self.viewer.layers[active_layer].selected_data)
 
-    def get_selected_data(self, name=False, type_=False):
+    def get_selected_data(self, name=False, type_=False, image=False):
         active_layer = self.viewer.layers.selection.active.name
         data = self.viewer.layers[active_layer].data
+
+        if image:
+            return data, active_layer
 
         # Convert IDxTimexZxYxX to IDxXxYxZ
         if data.shape[-1] == 5:
@@ -809,6 +914,7 @@ class TardisWidget(QWidget):
         return data
 
     def save_edited_instances(self):
+        # ToDo check if files are different, if not than do not save
         data = self.get_selected_data()
 
         name_ = splitext(self.select_data_view.currentText())[0]
@@ -819,44 +925,25 @@ class TardisWidget(QWidget):
         filename, f_format = QFileDialog.getSaveFileName(
             caption="Save Files",
             directory=join(getcwd(), f_name),
-            filter="CSV File (*.csv);;Amira Files (*.am)",
+            filter="CSV File (*.csv)",
             options=options,
         )
         filename = os.path.splitext(filename)[0]
 
-        if f_format == "CSV File (*.csv)":
-            filename = filename + ".csv"
+        filename = filename + ".csv"
 
-            segments = pd.DataFrame(data)
-            segments.to_csv(
-                join(self.dir, "Predictions", filename),
-                header=["IDs", "X [A]", "Y [A]", "Z [A]"],
-                index=False,
-                sep=",",
-            )
-        else:
-            filename = filename + ".am"
-
-            amira = NumpyToAmira()
-            amira.export_amira(file_dir=filename, coords=data)
-
-    def norm_px(self):
-        data, active_layer, type_layer = self.get_selected_data(name=True, type_=True)
-
-        data[:, 1:] = data[:, 1:] / float(self.pixel_size_bt.text())
-
-        create_point_layer(
-            self.viewer,
-            points=data,
-            name=active_layer,
-            visibility=True,
-            as_filament=True if type_layer == "tracks" else False,
+        segments = pd.DataFrame(data)
+        segments.to_csv(
+            join(self.dir, "Predictions", filename),
+            header=["IDs", "X [A]", "Y [A]", "Z [A]"],
+            index=False,
+            sep=",",
         )
 
     def resample(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
 
-        px = np.ceil(25 / float(self.pixel_size_bt.text()))
+        px = np.ceil(25 / convert_to_float(self.pixel_size_bt.text()))
         data = sort_segments(data)
         data = resample_filament(data, px)
         create_point_layer(
@@ -867,3 +954,23 @@ class TardisWidget(QWidget):
             as_filament=True if type_ == "tracks" else False,
         )
         show_info("Resampled all filament with 25A spacing.")
+
+    def stabilize_movie(self):
+        data, name = self.get_selected_data(image=True)
+        channel = int(self.analysis_ch.currentText())
+
+        if data.ndim != 5:
+            show_info('Not a movie, nothing to stabilize.')
+            return
+
+        for i in range(data.shape[1]):
+            data[channel, i, ...] = frames_phase_correlation(data[channel, i, ...])
+
+        create_image_layer(
+            self.viewer,
+            image=data,
+            range_=(np.min(data[0, 0, 0, ...]), np.max(data[0, 0, 0, ...])),
+            name=name,
+            transparency=False,
+            zero_dim=True,
+        )

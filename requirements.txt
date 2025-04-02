@@ -10,3 +10,5 @@ numpy>=2.0.0
 matplotlib>=3.9.1
 qtpy>=2.4.1
 pyqt5>=5.15.10
+
+opencv-python

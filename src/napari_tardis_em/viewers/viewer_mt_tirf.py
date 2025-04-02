@@ -58,6 +58,7 @@ class TardisWidget(QWidget):
     Plugin integrate TARDIS-em and allow to easily set up training. To make it more
     user-friendly, this plugin guid user what to do, and during training display
      results from validation loop.
+
     """
 
     def __init__(self, viewer_mt_tirf: Viewer):

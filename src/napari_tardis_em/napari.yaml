@@ -39,10 +39,6 @@ contributions:
       python_name: napari_tardis_em.viewers.viewer_mt_3d:TardisWidget
       title: Predict Microtubules 3D
 
-    - id: napari-tardis-em.viewer_mt_tirf
-      python_name: napari_tardis_em.viewers.viewer_mt_tirf:TardisWidget
-      title: Predict Microtubules TIRF
-
 #    - id: napari-tardis-em.viewer_mt_2d
 #      python_name: napari_tardis_em.viewers.viewer_mt_2d:TardisWidget
 #      title: Predict Microtubules 2D
@@ -64,7 +60,12 @@ contributions:
     # Analysis
     - id: napari-tardis-em.viewer_analysis_fibers
       python_name: napari_tardis_em.viewers.viewer_analysis_fibers:TardisWidget
-      title: Fiber analysis
+      title: Fiber Edit
+
+      # Analysis tirf
+    - id: napari-tardis-em.viewer_analysis_tirf
+      python_name: napari_tardis_em.viewers.viewer_analysis_tirf:TardisWidget
+      title: TIRF analysis
 
   readers:
     - command: napari-tardis-em.import_data
@@ -91,9 +92,6 @@ contributions:
     - command: napari-tardis-em.viewer_mt_3d
       display_name: Predict Microtubules 3D
 
-    - command: napari-tardis-em.viewer_mt_tirf
-      display_name: Predict Microtubules TIRF
-
 #    - command: napari-tardis-em.viewer_mt_2d
 #      display_name: Predict Microtubules 2D
 
@@ -110,4 +108,7 @@ contributions:
 
     # Analysis
     - command: napari-tardis-em.viewer_analysis_fibers
-      display_name: Fiber analysis
+      display_name: Fiber Edit
+
+    - command: napari-tardis-em.viewer_analysis_tirf
+      display_name: TIRF analysis
