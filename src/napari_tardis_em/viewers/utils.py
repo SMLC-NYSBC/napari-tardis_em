@@ -340,7 +340,7 @@ def _update_checkpoint_dir(filter_=False):
 
 
 def convert_to_float(strings):
-    strings = strings.replace(',', '.') if ',' in strings else strings
+    strings = strings.replace(",", ".") if "," in strings else strings
     return float(strings)
 
 
@@ -359,7 +359,9 @@ def shift_image(frame, shift_y, shift_x):
     shifted_y_end = frame.shape[0] - max(0, -shift_y)
 
     # Apply the shift using slicing
-    shifted_frame[shifted_y_start:shifted_y_end, shifted_x_start:shifted_x_end] = frame[orig_y_start:orig_y_end, orig_x_start:orig_x_end]
+    shifted_frame[shifted_y_start:shifted_y_end, shifted_x_start:shifted_x_end] = frame[
+        orig_y_start:orig_y_end, orig_x_start:orig_x_end
+    ]
 
     return shifted_frame
 
@@ -385,7 +387,9 @@ def phase_correct(image1, image2):
     phase_diff = np.angle(F1) - np.angle(F2)
 
     # Compute cross-power spectrum
-    cross_power_spectrum = (F1 * np.conj(F2)) / np.abs(F1 * np.conj(F2))  # Normalize phase correlation
+    cross_power_spectrum = (F1 * np.conj(F2)) / np.abs(
+        F1 * np.conj(F2)
+    )  # Normalize phase correlation
     correlation = np.fft.ifft2(cross_power_spectrum).real  # Get correlation matrix
 
     # Find peak correlation value (shift estimation)
@@ -398,7 +402,8 @@ def frames_phase_correlation(frames):
     _, h, w = frames.shape
 
     from tardis_em.utils.normalization import RescaleNormalize, MeanStdNormalize
-    norm = RescaleNormalize((.1, 99.9))
+
+    norm = RescaleNormalize((0.1, 99.9))
     mstd = MeanStdNormalize()
 
     stabilized_frames = []
@@ -409,7 +414,9 @@ def frames_phase_correlation(frames):
         curr_frame = mstd(norm(frames[i]))
 
         # calculate the correlation image; note the flipping of onw of the images
-        shift = scipy.signal.fftconvolve(init_frame, curr_frame[::-1,::-1], mode='full')
+        shift = scipy.signal.fftconvolve(
+            init_frame, curr_frame[::-1, ::-1], mode="full"
+        )
         shift = np.unravel_index(np.argmax(shift), shift.shape)
         shift = (shift[0] - h, shift[1] - w)
 

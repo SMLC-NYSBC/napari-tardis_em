@@ -32,8 +32,12 @@ import numpy as np
 from napari_tardis_em.viewers import IMG_FORMAT, CheckableComboBox
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
-from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer, convert_to_float, \
-    frames_phase_correlation
+from napari_tardis_em.viewers.utils import (
+    create_image_layer,
+    create_point_layer,
+    convert_to_float,
+    frames_phase_correlation,
+)
 
 from tardis_em.analysis.analysis import analyse_filaments_list
 from tardis_em.utils.load_data import load_image
@@ -56,10 +60,14 @@ class TardisWidget(QWidget):
     user-friendly, this plugin guid user what to do, and during training display
      results from validation loop.
 
-      ToDo:
-        - Colocalization of a signal in multiple channels | Select multiple channels and see if the signal is correlated
-            - Sub-point output also a data for Intesity over MT distance.
-        - Translation for channels, when in Movie. Some frames are moved we need some way to smartly translate the entire mask in XY to fix signal
+    ToDo:
+        Co-localization for movies and frames
+            - data mean but also per pixel on the MT length
+            - for all microtubules
+            - statistic? which mT are not correlated
+
+    ToDo:
+        Try using MTs chanells to get predictions
     """
 
     def __init__(self, viewer_mt_tirf: Viewer):
@@ -192,6 +200,7 @@ class TardisWidget(QWidget):
                 "avg_length_intensity",
                 "sum_intensity",
                 "sum_length_intensity",
+                "correlation",
             ]
         )
 
@@ -605,11 +614,14 @@ class TardisWidget(QWidget):
             pixel_size = None
         else:
             pixel_size = [pixel_size]
+
         analyse_filaments_list(
             data=[data],
             names_l=[splitext(name_)[0] + f"_{frame_}"],
             path=join(self.dir, "Predictions", "Analysis"),
             images=[img[dim_, frame_, ...]] if img is not None else None,
+            image_corr=img[:, frame_, 0, ...],
+            frame_id=dim_,
             px=pixel_size,
             thicknesses=[
                 int(self.thickness_bt1.currentText()),
@@ -628,14 +640,16 @@ class TardisWidget(QWidget):
         frame_ = self.nd2_current_frame
         dim_ = int(self.analysis_ch.currentText())
         analysis_list = self.analysis_list.currentData()
-
+        analysis_list = [d for d in analysis_list if d != "correlation"]
         try:
             data = self.viewer.layers[splitext(name_)[0] + "_instance"].data
             if data.shape[1] == 5:
                 data = np.array((data[:, 0], data[:, 4], data[:, 3], data[:, 2])).T
             else:
                 try:
-                    ids = self.viewer.layers[splitext(name_)[0] + "_instance"].properties["ids"]
+                    ids = self.viewer.layers[
+                        splitext(name_)[0] + "_instance"
+                    ].properties["ids"]
                     data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
                 except KeyError:
                     data = np.zeros((0, 4))
@@ -683,7 +697,6 @@ class TardisWidget(QWidget):
         #     """
         #     pass
 
-
     def nd2_file_frame(self):
         self.nd2_update = True
         name_ = self.select_data_view.currentText()
@@ -706,13 +719,13 @@ class TardisWidget(QWidget):
             id_ = f"_{self.nd2_file_frame_bt.currentText()}"
             try:
                 instance = np.genfromtxt(
-                join(
-                    self.dir,
-                    "Predictions",
-                    splitext(name_)[0] + id_ + "_instances_filter.csv",
-                ),
-                delimiter=",",
-                skip_header=1,
+                    join(
+                        self.dir,
+                        "Predictions",
+                        splitext(name_)[0] + id_ + "_instances_filter.csv",
+                    ),
+                    delimiter=",",
+                    skip_header=1,
                 )
             except FileNotFoundError:
                 instance = np.genfromtxt(
@@ -960,7 +973,7 @@ class TardisWidget(QWidget):
         channel = int(self.analysis_ch.currentText())
 
         if data.ndim != 5:
-            show_info('Not a movie, nothing to stabilize.')
+            show_info("Not a movie, nothing to stabilize.")
             return
 
         for i in range(data.shape[1]):
