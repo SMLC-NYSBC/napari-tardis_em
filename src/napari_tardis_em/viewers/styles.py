@@ -10,9 +10,7 @@
 from typing import Union
 
 import numpy as np
-
 from PyQt5.QtWidgets import QDialog, QVBoxLayout
-
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 

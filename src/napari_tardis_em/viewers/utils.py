@@ -9,21 +9,18 @@
 #######################################################################
 from os import mkdir, listdir, getcwd
 from os.path import join, isdir
-
-import cv2
-import scipy
 from shutil import rmtree
 from typing import Tuple, Optional
 
 import numpy as np
+import scipy
 from PyQt5.QtWidgets import QFileDialog
 
 from napari_tardis_em.viewers import colormap_for_display, face_colormap, IMG_FORMAT
-
-from tardis_em.utils.dataset import build_test_dataset
 from tardis_em.cnn.datasets.build_dataset import build_train_dataset
-from tardis_em.utils.setup_envir import check_dir
+from tardis_em.utils.dataset import build_test_dataset
 from tardis_em.utils.errors import TardisError
+from tardis_em.utils.setup_envir import check_dir
 
 
 def update_viewer_prediction(viewer, image: np.ndarray, position: dict):
@@ -92,8 +89,11 @@ def create_point_layer(
     viewer,
     points: np.ndarray,
     name: str,
+    add_properties=None,
     visibility=True,
     as_filament=False,
+    size_=10,
+    select_layer=None,
 ):
     """
     Create a point layer in napari.
@@ -104,26 +104,28 @@ def create_point_layer(
         name (str): Layer name
         visibility (bool):
         as_filament (bool):
+        size_ (float):
     """
     current_center = viewer.camera.center
     current_orient = viewer.camera.angles
     current_zoom = viewer.camera.zoom
 
     try:
+        point_features = viewer.layers[name].properties
+    except:
+        point_features = {}
+
+    try:
         size_ = viewer.layers[name].current_size
     except:
-        size_ = 10
+        size_ = size_
 
     try:
         viewer.layers.remove(name)
     except:
         pass
 
-    point_features = {
-        "ids": tuple(points[:, 0].flatten()),
-    }
-
-    ids = points[:, -4].astype(np.int16)
+    ids = points[:, 0].astype(np.int16)
     points = np.array(points[:, 1:])
 
     # Assert points in 3D
@@ -134,18 +136,33 @@ def create_point_layer(
     # Convert xyz to zyx
     points = np.vstack((points[:, 2], points[:, 1], points[:, 0])).T
 
+    face_colormap_ = face_colormap
+    view_by = "ID"
+    point_features["ID"] = tuple(ids)
+    if add_properties is not None:
+        for k, v in add_properties.items():
+            point_features[k] = tuple(v)
+            view_by = k
+        if view_by != "ID":
+            face_colormap_ = "inferno"
+
+    id_len = len(points)
+    point_features = {
+        k: v for k, v in point_features.items() if len(v) == id_len and k != "track_id"
+    }
+
     if not as_filament:
         viewer.add_points(
             points,
             name=name,
             features=point_features,
-            face_color="ids",
-            face_colormap=face_colormap,
+            face_color=view_by,
+            face_colormap=face_colormap_,
             visible=visibility,
             size=size_,
             out_of_slice_display=True,
         )
-        print(size_)
+
     else:
         t = np.zeros_like(ids)
         points = np.vstack((ids, t, points[:, 0], points[:, 1], points[:, 2])).T
@@ -153,6 +170,7 @@ def create_point_layer(
             points,
             name=name,
             visible=visibility,
+            color_by=view_by,
             features=point_features,
             colormap="hsv",
         )
@@ -160,6 +178,11 @@ def create_point_layer(
     viewer.camera.center = current_center
     viewer.camera.zoom = current_zoom
     viewer.camera.angles = current_orient
+
+    if select_layer is not None:
+        viewer.layers[select_layer].visible = False
+        while viewer.layers.selection.active.name != select_layer:
+            viewer.layers.select_previous()
 
     try:
         viewer.layers["Predicted_Instances"].visible = True

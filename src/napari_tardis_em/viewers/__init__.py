@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QEvent, Qt
-from PyQt5.QtGui import QStandardItemModel, QPalette, QStandardItem, QFontMetrics
+from PyQt5.QtGui import QPalette, QStandardItem, QFontMetrics
 from PyQt5.QtWidgets import QComboBox, QStyledItemDelegate, qApp
 
 from tardis_em.utils.losses import *
@@ -26,7 +26,6 @@ loss_functions = [
 
 
 class CheckableComboBox(QComboBox):
-
     # Subclass Delegate to increase item height
     class Delegate(QStyledItemDelegate):
         def sizeHint(self, option, index):

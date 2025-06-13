@@ -13,6 +13,7 @@ import sys
 from os.path import join
 
 import numpy as np
+import torch
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
 from PyQt5.QtWidgets import (
     QPushButton,
@@ -22,21 +23,12 @@ from PyQt5.QtWidgets import (
     QLabel,
     QFileDialog,
 )
-from napari.utils.notifications import show_info
-from qtpy.QtWidgets import QWidget
-
-import torch
-from torch import optim
-from torch.utils.data import DataLoader
-
 from napari import Viewer
 from napari.qt.threading import thread_worker
-
-from tardis_em.cnn.cnn import build_cnn_network
-from tardis_em.cnn.datasets.dataloader import CNNDataset
-from tardis_em.cnn.utils.utils import check_model_dict
-from tardis_em.utils.errors import TardisError
-from tardis_em.utils.metrics import calculate_f1
+from napari.utils.notifications import show_info
+from qtpy.QtWidgets import QWidget
+from torch import optim
+from torch.utils.data import DataLoader
 
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers import loss_functions
@@ -49,6 +41,11 @@ from napari_tardis_em.viewers.utils import (
     setup_environment_and_dataset,
     create_image_layer,
 )
+from tardis_em.cnn.cnn import build_cnn_network
+from tardis_em.cnn.datasets.dataloader import CNNDataset
+from tardis_em.cnn.utils.utils import check_model_dict
+from tardis_em.utils.errors import TardisError
+from tardis_em.utils.metrics import calculate_f1
 
 
 class TardisWidget(QWidget):

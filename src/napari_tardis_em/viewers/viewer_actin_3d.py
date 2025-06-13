@@ -11,7 +11,6 @@ from os import getcwd
 
 import numpy as np
 import torch
-
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIntValidator, QDoubleValidator
 from PyQt5.QtWidgets import (
@@ -23,20 +22,13 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
 )
-from qtpy.QtWidgets import QWidget
-
 from napari import Viewer
 from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info, show_error
+from qtpy.QtWidgets import QWidget
 
-from tardis_em.cnn.data_processing.scaling import scale_image
-
-from tardis_em.utils.load_data import load_image
-from tardis_em.utils.setup_envir import clean_up
-
-
-from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.utils.utils import get_list_of_device
+from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.viewers.utils import (
     create_image_layer,
     update_viewer_prediction,
@@ -50,6 +42,9 @@ from napari_tardis_em.viewers.viewer_utils import (
     _update_versions,
     semantic_preprocess,
 )
+from tardis_em.cnn.data_processing.scaling import scale_image
+from tardis_em.utils.load_data import load_image
+from tardis_em.utils.setup_envir import clean_up
 
 
 class TardisWidget(QWidget):

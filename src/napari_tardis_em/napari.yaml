@@ -58,9 +58,13 @@ contributions:
       title: Predict Actin 3D
 
     # Analysis
-    - id: napari-tardis-em.viewer_analysis_fibers
-      python_name: napari_tardis_em.viewers.viewer_analysis_fibers:TardisWidget
+    - id: napari-tardis-em.viewer_fiber_edit
+      python_name: napari_tardis_em.viewers.viewer_fiber_edit:TardisWidget
       title: Fiber Edit
+
+    - id: napari-tardis-em.viewer_fiber_analysis
+      python_name: napari_tardis_em.viewers.viewer_fiber_analysis:TardisWidget
+      title: Fiber analysis
 
       # Analysis tirf
     - id: napari-tardis-em.viewer_analysis_tirf
@@ -107,8 +111,11 @@ contributions:
       display_name: Predict Actin 3D
 
     # Analysis
-    - command: napari-tardis-em.viewer_analysis_fibers
+    - command: napari-tardis-em.viewer_fiber_edit
       display_name: Fiber Edit
+
+    - command: napari-tardis-em.viewer_fiber_analysis
+      display_name: Fiber Analysis
 
     - command: napari-tardis-em.viewer_analysis_tirf
       display_name: TIRF analysis

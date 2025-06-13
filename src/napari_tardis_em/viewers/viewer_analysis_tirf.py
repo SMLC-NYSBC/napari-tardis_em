@@ -9,10 +9,10 @@
 #######################################################################
 import os
 from os import getcwd, listdir, mkdir
-from os.path import join, splitext, basename, isdir, isfile
+from os.path import join, splitext, isdir, isfile
 
+import numpy as np
 import pandas as pd
-from napari import Viewer
 from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
     QPushButton,
@@ -24,25 +24,20 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QCheckBox,
 )
+from napari import Viewer
 from napari.utils.notifications import show_info
 from qtpy.QtWidgets import QWidget
 
-import numpy as np
-
+from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers import IMG_FORMAT, CheckableComboBox
 from napari_tardis_em.viewers.styles import border_style
-from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers.utils import (
     create_image_layer,
     create_point_layer,
     convert_to_float,
     frames_phase_correlation,
 )
-
 from tardis_em.analysis.analysis import analyse_filaments_list
-from tardis_em.utils.load_data import load_image
-from tardis_em.utils.export_data import NumpyToAmira
-from tardis_em.utils.predictor import GeneralPredictor
 from tardis_em.analysis.filament_utils import (
     reorder_segments_id,
     sort_segment,
@@ -50,6 +45,8 @@ from tardis_em.analysis.filament_utils import (
     sort_segments,
     resample_filament,
 )
+from tardis_em.utils.load_data import load_image
+from tardis_em.utils.predictor import GeneralPredictor
 
 
 class TardisWidget(QWidget):
@@ -649,7 +646,7 @@ class TardisWidget(QWidget):
                 try:
                     ids = self.viewer.layers[
                         splitext(name_)[0] + "_instance"
-                    ].properties["ids"]
+                    ].properties["ID"]
                     data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
                 except KeyError:
                     data = np.zeros((0, 4))
@@ -784,7 +781,7 @@ class TardisWidget(QWidget):
             new_id = int(np.max(np.unique(data[:, 0])) + 1)
             self.resample()
 
-        self.viewer.layers[name].feature_defaults["ids"] = new_id
+        self.viewer.layers[name].feature_defaults["ID"] = new_id
         self.viewer.layers[name].mode = "add"
 
         show_info(f"Adding new filament id: {new_id}")
@@ -911,7 +908,7 @@ class TardisWidget(QWidget):
             type_layer = "tracks"
         else:
             try:
-                ids = self.viewer.layers[active_layer].properties["ids"]
+                ids = self.viewer.layers[active_layer].properties["ID"]
                 data = np.array((ids, data[:, 2], data[:, 1], data[:, 0])).T
             except KeyError:
                 data = np.zeros((0, 4))
