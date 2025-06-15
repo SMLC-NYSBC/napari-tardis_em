@@ -218,7 +218,7 @@ class TardisWidget(QWidget):
         self.normalize_px.setValidator(QDoubleValidator(1, 10000, 3))
         self.normalize_px.setToolTip(
             "Optionally, if select normalization pixel size value if you specified it"
-            "during your CNN training."
+            "during your CNN training. Type None to disable normalization, or 0.0 to use default"
         )
 
         self.points_in_patch = QLineEdit("600")
@@ -432,6 +432,7 @@ class TardisWidget(QWidget):
                 self.output_instance.currentText(),
                 {
                     "correct_px": self.correct_px.text(),
+                    "normalize_px": self.normalize_px.text(),
                     "cnn_threshold": float(self.cnn_threshold.text()),
                     "dist_threshold": float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),

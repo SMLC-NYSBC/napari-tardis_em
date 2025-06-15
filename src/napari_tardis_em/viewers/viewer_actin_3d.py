@@ -202,6 +202,13 @@ class TardisWidget(QWidget):
         label_4 = QLabel("Setting user is not advice to change")
         label_4.setStyleSheet(border_style("red"))
 
+        self.normalize_px = QLineEdit("None")
+        self.normalize_px.setValidator(QDoubleValidator(1, 10000, 3))
+        self.normalize_px.setToolTip(
+            "Optionally, if select normalization pixel size value if you specified it"
+            "during your CNN training."
+        )
+
         self.points_in_patch = QLineEdit("600")
         self.points_in_patch.setValidator(QDoubleValidator(100, 10000, 1))
         self.points_in_patch.setToolTip(
@@ -300,6 +307,7 @@ class TardisWidget(QWidget):
         layout.addRow("Connect splines within diameter [A]", self.connect_cylinder)
 
         layout.addRow("---- Advance -------", label_4)
+        layout.addRow("Normalization pixel size [A]", self.normalize_px)
         layout.addRow("No. of points [DIST]", self.points_in_patch)
         layout.addRow("Model Version", self.model_version)
 
@@ -398,7 +406,7 @@ class TardisWidget(QWidget):
                 self.output_instance.currentText(),
                 {
                     "correct_px": self.correct_px.text(),
-                    "normalize_px": "None",
+                    "normalize_px": self.normalize_px.text(),
                     "cnn_threshold": float(self.cnn_threshold.text()),
                     "dist_threshold": float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
