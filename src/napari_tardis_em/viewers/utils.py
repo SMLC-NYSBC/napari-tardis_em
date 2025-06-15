@@ -136,7 +136,7 @@ def create_point_layer(
     # Convert xyz to zyx
     points = np.vstack((points[:, 2], points[:, 1], points[:, 0])).T
 
-    face_colormap_ = face_colormap
+    face_colormap_ = "hsv"
     view_by = "ID"
     point_features["ID"] = tuple(ids)
     if add_properties is not None:
@@ -156,24 +156,22 @@ def create_point_layer(
             points,
             name=name,
             features=point_features,
-            face_color=view_by,
-            face_colormap=face_colormap_,
             visible=visibility,
+            face_color=face_colormap,
             size=size_,
             out_of_slice_display=True,
         )
-
     else:
         t = np.zeros_like(ids)
         points = np.vstack((ids, t, points[:, 0], points[:, 1], points[:, 2])).T
         viewer.add_tracks(
             points,
             name=name,
-            visible=visibility,
-            color_by=view_by,
             features=point_features,
-            colormap="hsv",
+            visible=visibility,
         )
+        viewer.layers[name].color_by = view_by
+        viewer.layers[name].colormap = face_colormap_
 
     viewer.camera.center = current_center
     viewer.camera.zoom = current_zoom

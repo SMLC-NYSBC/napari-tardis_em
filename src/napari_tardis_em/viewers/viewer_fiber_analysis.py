@@ -922,7 +922,19 @@ class PlotPopup(QDialog):
 
             if FWHM:
                 counts, bins, _ = ax1.hist(
-                    y, bins="fd", density=True, color="skyblue", edgecolor="black"
+                    y,
+                    bins=int(len(y) / 50),
+                    density=True,
+                    color="skyblue",
+                    edgecolor="black",
+                )
+                ax1.hist(
+                    y,
+                    bins=int(len(y) / 50),
+                    density=True,
+                    color="skyblue",
+                    edgecolor="black",
+                    histtype="step",
                 )
 
                 peak_idx = np.argmax(counts)
