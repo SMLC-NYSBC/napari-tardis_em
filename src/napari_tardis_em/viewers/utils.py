@@ -89,11 +89,13 @@ def create_point_layer(
     viewer,
     points: np.ndarray,
     name: str,
-    add_properties=None,
+    add_properties: dict = None,
     visibility=True,
     as_filament=False,
     size_=10,
     select_layer=None,
+    keep_view_by=False,
+    color_=None
 ):
     """
     Create a point layer in napari.
@@ -120,6 +122,11 @@ def create_point_layer(
     except:
         size_ = size_
 
+    if keep_view_by:
+        view_by = viewer.layers[select_layer].color_by
+    else:
+        view_by = "ID"
+
     try:
         viewer.layers.remove(name)
     except:
@@ -137,14 +144,21 @@ def create_point_layer(
     points = np.vstack((points[:, 2], points[:, 1], points[:, 0])).T
 
     face_colormap_ = "hsv"
-    view_by = "ID"
     point_features["ID"] = tuple(ids)
     if add_properties is not None:
         for k, v in add_properties.items():
             point_features[k] = tuple(v)
-            view_by = k
-        if view_by != "ID":
+            if not keep_view_by:
+                view_by = k
+
+        if not keep_view_by:
+            if view_by != "ID":
+                face_colormap_ = "inferno"
+        else:
             face_colormap_ = "inferno"
+
+    if color_ is not None:
+        face_colormap_ = color_
 
     id_len = len(points)
     point_features = {

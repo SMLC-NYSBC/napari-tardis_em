@@ -7,6 +7,7 @@
 #  Robert Kiewisz, Tristan Bepler                                     #
 #  MIT License 2024                                                   #
 #######################################################################
+from collections import defaultdict
 from os import getcwd
 from os.path import join
 
@@ -15,7 +16,7 @@ from scipy.stats import norm
 import numpy as np
 import pandas as pd
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDialog
+from PyQt5.QtWidgets import QDialog, QDialogButtonBox
 from PyQt5.QtWidgets import (
     QHBoxLayout,
     QSlider,
@@ -37,6 +38,7 @@ from sklearn.neighbors import KDTree
 
 from napari_tardis_em.viewers.styles import border_style
 from napari_tardis_em.viewers.utils import create_point_layer
+from tardis_em.analysis.mt_classification.utils import assign_filaments_to_n_poles
 from tardis_em.analysis.filament_utils import (
     reorder_segments_id,
     sort_by_length,
@@ -47,6 +49,7 @@ from tardis_em.analysis.geometry_metrics import (
     length_list,
     curvature_list,
     tortuosity_list,
+    group_points_by_distance,
 )
 from tardis_em.utils.export_data import NumpyToAmira
 
@@ -90,8 +93,12 @@ class TardisWidget(QWidget):
         self.pixel_size_bt = QLineEdit("1.0")
         self.pixel_size_bt.setToolTip("Select correct pixel size for analysis")
 
-        self.resample_bt = QPushButton("Resample to 25A spacing")
+        self.resample_bt = QPushButton("Resample")
         self.resample_bt.clicked.connect(self.resample)
+
+        self.pixel_resize_box = QHBoxLayout()
+        self.pixel_resize_box.addWidget(self.pixel_size_bt)
+        self.pixel_resize_box.addWidget(self.resample_bt)
 
         self.edite_mode_bt_1 = QPushButton("Selected layer to points")
         self.edite_mode_bt_1.setMinimumWidth(225)
@@ -101,16 +108,18 @@ class TardisWidget(QWidget):
         self.edite_mode_bt_2.setMinimumWidth(225)
         self.edite_mode_bt_2.clicked.connect(self.track_layer)
 
+        self.cluster_ends_th = QLineEdit("auto")
+        self.cluster_ends_1_bt = QPushButton("Cluster fibers")
+        self.cluster_ends_1_bt.clicked.connect(self.cluster_ends)
+        self.cluster_ends_box = QHBoxLayout()
+        self.cluster_ends_box.addWidget(self.cluster_ends_th)
+        self.cluster_ends_box.addWidget(self.cluster_ends_1_bt)
+
         label_anal = QLabel("Analysis                 ")
         label_anal.setStyleSheet(border_style("blue"))
 
-        self.add_centrosome_1_bt = QPushButton("Add point 1")
-        self.add_centrosome_1_bt.clicked.connect(self.add_new_point_0_000)
-        self.add_centrosome_2_bt = QPushButton("Add point 2")
-        self.add_centrosome_2_bt.clicked.connect(self.add_new_point_1_000)
-        self.add_centrosome_box = QHBoxLayout()
-        self.add_centrosome_box.addWidget(self.add_centrosome_1_bt)
-        self.add_centrosome_box.addWidget(self.add_centrosome_2_bt)
+        self.add_centrosome_1_bt = QPushButton("Manually")
+        self.add_centrosome_1_bt.clicked.connect(self.add_new_point)
 
         self.add_centrosome_auto_select = QComboBox()
         self.add_centrosome_auto_select.addItems(["1", "2", "3", "4"])
@@ -120,6 +129,7 @@ class TardisWidget(QWidget):
         self.add_centrosome_auto_box = QHBoxLayout()
         self.add_centrosome_auto_box.addWidget(self.add_centrosome_auto_select)
         self.add_centrosome_auto_box.addWidget(self.add_centrosome_auto_bt)
+        self.add_centrosome_auto_box.addWidget(self.add_centrosome_1_bt)
 
         self.save_bt = QPushButton("Save selected instance file")
         self.save_bt.clicked.connect(self.save_edited_instances)
@@ -244,16 +254,14 @@ class TardisWidget(QWidget):
         layout = QFormLayout()
 
         layout.addRow("---- Pre-setting ----", label_2)
-        layout.addRow("Pixel size", self.pixel_size_bt)
-        layout.addRow("Resample", self.resample_bt)
+        layout.addRow("Pixel size", self.pixel_resize_box)
 
         layout.addRow("", self.edite_mode_bt_1)
         layout.addRow("", self.edite_mode_bt_2)
 
         layout.addRow("---- Parameters -----", label_anal)
-
-        layout.addRow("Add centrosome", self.add_centrosome_box)
         layout.addRow("Add centrosome [auto]", self.add_centrosome_auto_box)
+        layout.addRow("Cluster ends", self.cluster_ends_box)
 
         layout.addRow("---- Filter ----", label_2)
         layout.addRow("By Length", self.filter_length_box)
@@ -398,6 +406,15 @@ class TardisWidget(QWidget):
             k: v[first_indices] for k, v in properties.items() if k != "track_id"
         }
 
+        if any(key.startswith("Label_") for key in properties):
+            labels = [
+                [k for k, v in properties.items() if k.startswith("Label_")],
+                [v for k, v in properties.items() if k.startswith("Label_")],
+            ]
+            labels = group_indices_by_value(labels)
+        else:
+            labels = None
+
         x = pd.DataFrame(np.array(list(properties.values())).T)
         header = list(properties.keys())
 
@@ -410,6 +427,9 @@ class TardisWidget(QWidget):
             options=options,
         )
 
+        if f_dir == '':
+            return
+
         if not f_dir.endswith((".csv", ".am")):
             if f_format == "CSV File (*.csv)":
                 f_dir = f_dir + ".csv"
@@ -420,13 +440,13 @@ class TardisWidget(QWidget):
             self._save_csv(x, header, f_dir=f_dir)
         elif f_dir.endswith(".am"):
             amira = NumpyToAmira()
-            amira.export_amira(
+            amira.export_amiraV2(
                 file_dir=f_dir,
                 coords=data,
-                labels=["Selected_MT"],
+                labels=labels,
                 scores=[
-                    [k for k, v in properties.items() if k != "ID"],
-                    [v for k, v in properties.items() if k != "ID"],
+                    [k for k, v in properties.items() if k != "ID" and not k.startswith("Label_")],
+                    [v for k, v in properties.items() if k != "ID" and not k.startswith("Label_")],
                 ],
             )
 
@@ -469,8 +489,10 @@ class TardisWidget(QWidget):
             size_=100 / float(self.pixel_size_bt.text()),
         )
 
-    def add_new_point_000(self, ids):
+    def add_new_point(self):
         name = "Centers"
+        zyx = show_coordinate_dialog()
+
         try:
             data = self.viewer.layers[name].data
             data = np.array(
@@ -481,15 +503,16 @@ class TardisWidget(QWidget):
                     data[:, 0],
                 )
             ).T
+            ids = np.max(data[:, 0]).item() + 1
         except KeyError:
-            data = np.zeros((1, 4))
+            data = np.zeros((0, 4))
+            ids = 0
 
-            if ids == 1:
-                ids = 0
-
-        if ids == 1 and data.shape[0] == 1:
+        try:
+            data = np.vstack([data, zyx])
+        except:
             data = np.vstack([data, np.zeros((1, 4))])
-        data[ids, 0] = ids
+        data[-1, 0] = ids
 
         create_point_layer(
             viewer=self.viewer,
@@ -500,11 +523,73 @@ class TardisWidget(QWidget):
             size_=100 / float(self.pixel_size_bt.text()),
         )
 
-    def add_new_point_0_000(self):
-        self.add_new_point_000(0)
+    def cluster_ends(self):
+        th = self.cluster_ends_th.text()
+        if th != 'auto':
+            th = float(th)
 
-    def add_new_point_1_000(self):
-        self.add_new_point_000(1)
+        data, name, properties = self.get_selected_data(name=True, properties=True)
+
+        layers = [layer.name for layer in self.viewer.layers]
+        types_ = [layer.__class__.__name__ for layer in self.viewer.layers]
+
+        last_obj = self.last_selected_obj.text().split(";")
+
+        if last_obj[0] == "None":
+            try:
+                idx = types_.index("Points")
+            except ValueError:
+                return
+
+            layer = [self.viewer.layers[idx].name]
+        else:
+            layer = [n for n in layers if n.startswith(last_obj[0])]
+
+        poles = self.get_data_by_name(layer[0])
+
+        # Label 1
+        filaments = assign_filaments_to_n_poles(data, poles[:, 1:])
+
+        filaments_label = np.zeros(len(np.unique(data[:, 0])))
+        id_ = 1
+        for i in filaments:
+            for j in np.unique(i[:, 0]):
+                filaments_label[int(j)] = id_
+            id_ += 1
+
+        unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
+        point_no = np.array(list(first_indices[1:]) + [len(data)]) - first_indices
+        filaments_label = np.repeat(filaments_label, point_no)
+
+        filaments_labels = {"Label_Grouped_Centers": filaments_label}
+
+        grouped_filaments = []
+        for i in filaments:
+            # get last index of ID
+            _, first_idx_filament = np.unique(i[:, 0], return_index=True)
+
+            # get points with indexes and groupped and add to list
+            grouped_filaments.extend(group_points_by_distance(i[first_idx_filament, :], eps=th))
+
+        grouped_label = np.zeros(len(np.unique(data[:, 0])))
+        id_ = 1
+        for i in grouped_filaments:
+            for j in np.unique(i):
+                grouped_label[int(j)] = id_
+            id_ += 1
+
+        grouped_label = np.repeat(grouped_label, point_no)
+        filaments_labels['Label_Grouped_Ends'] = grouped_label
+
+        create_point_layer(
+            viewer=self.viewer,
+            points=data,
+            name=name,
+            add_properties=filaments_labels,
+            visibility=True,
+            as_filament=True,
+            color_='viridis'
+        )
 
     def filter_value_changed(self):
         try:
@@ -515,13 +600,18 @@ class TardisWidget(QWidget):
         if len(properties) == 0 or properties is None:
             return
 
+        # Filter by % given as value = min_val + x * (max_val - min_val)
         filter_ = False
         if "Length" in properties:
             filter_length = self.filter_length.value()
+            filter_length /= 100
 
             filter_ = True
             length = properties["Length"]
-            filter_length_value = (max(length) * filter_length) / 100.0
+            l_min = min(length)
+            l_max = max(length)
+
+            filter_length_value = l_min + filter_length * (l_max - l_min)
             self.filter_length_label.setText(f"{int(filter_length_value)}")
 
             filter_length_bool = length <= filter_length_value
@@ -530,11 +620,15 @@ class TardisWidget(QWidget):
 
         if "Curvature" in properties:
             filter_curv = self.filter_curv.value()
+            filter_curv /= 100
 
             filter_ = True
             curvature = properties["Curvature"]
-            filter_curv_value = (max(curvature) * filter_curv) / 100.0
-            self.filter_curv_label.setText(f"{int(filter_curv_value)}")
+            c_min = min(curvature)
+            c_max = max(curvature)
+            filter_curv_value = c_min + filter_curv * (c_max - c_min)
+
+            self.filter_curv_label.setText(f"{int(filter_curv_value):.3f}")
 
             filter_curv_bool = curvature <= filter_curv_value
         else:
@@ -542,11 +636,15 @@ class TardisWidget(QWidget):
 
         if "Tortuosity" in properties:
             filter_tort = self.filter_tort.value()
+            filter_tort /= 100
 
             filter_ = True
             tortuosity = properties["Tortuosity"]
-            filter_tort_value = (max(tortuosity) * filter_tort) / 100.0
-            self.filter_tort_label.setText(f"{int(filter_tort_value)}")
+            t_min = min(tortuosity)
+            t_max = max(tortuosity)
+            filter_tort_value = t_min + filter_tort * (t_max - t_min)
+
+            self.filter_tort_label.setText(f"{float(filter_tort_value):.2f}")
 
             filter_tort_bool = tortuosity <= filter_tort_value
         else:
@@ -569,6 +667,7 @@ class TardisWidget(QWidget):
                 visibility=True,
                 as_filament=True,
                 select_layer=name,
+                keep_view_by=True,
             )
 
     def filter_to_selected_point_nearest_(self):
@@ -920,17 +1019,18 @@ class PlotPopup(QDialog):
             # Create two subplots side by side
             ax1 = self.figure.add_subplot(111)  # 1 row, 1 columns, 1st subplot
 
+            bins = np.histogram_bin_edges(y, bins='rice')
             if FWHM:
                 counts, bins, _ = ax1.hist(
                     y,
-                    bins=int(len(y) / 50),
+                    bins=int(len(y) / 100) if len(y) > 1000 else 'fd',
                     density=True,
                     color="skyblue",
                     edgecolor="black",
                 )
                 ax1.hist(
                     y,
-                    bins=int(len(y) / 50),
+                    bins=int(len(y) / 100) if len(y) > 1000 else 'fd',
                     density=True,
                     color="skyblue",
                     edgecolor="black",
@@ -1001,3 +1101,63 @@ class PlotPopup(QDialog):
             ax1.set_ylabel(y_label)
             ax1.set_title(title)
             self.canvas.draw()
+
+
+def show_coordinate_dialog():
+    # Create dialog
+    dialog = QDialog()
+    dialog.setWindowTitle("Enter Coordinates")
+    layout = QFormLayout()
+
+    # Create input fields
+    z_input = QLineEdit()
+    y_input = QLineEdit()
+    x_input = QLineEdit()
+
+    # Add input fields to layout
+    layout.addRow("X:", x_input)
+    layout.addRow("Y:", y_input)
+    layout.addRow("Z:", z_input)
+
+    # Add OK/Cancel buttons
+    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+
+    dialog.setLayout(layout)
+
+    # Show dialog and process input
+    if dialog.exec_():
+        try:
+            # Get and convert inputs to floats
+            z = float(z_input.text())
+            y = float(y_input.text())
+            x = float(x_input.text())
+
+            return np.array([[0, z, y, x]])
+        except ValueError:
+            show_info("Invalid input: Please enter valid numbers for coordinates.")
+
+
+def group_indices_by_value(data):
+    # Initialize output lists
+    new_names = []
+    new_indices = []
+
+    # Process each array and its corresponding name
+    for name, arr in zip(data[0], data[1]):
+        # Get unique values
+        unique_vals = np.unique(arr)
+        # For each unique value, find all indices where it appears
+        for val in unique_vals:
+            # Create name with the value as suffix
+            new_names.append(f"{name}_{int(val)}")
+            # Find indices where this value appears
+            indices = np.where(arr == val)[0]
+            new_indices.append(indices)
+
+    # Create the output list
+    output = [new_names, new_indices]
+
+    return output
