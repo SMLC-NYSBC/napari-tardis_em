@@ -95,7 +95,7 @@ def create_point_layer(
     size_=10,
     select_layer=None,
     keep_view_by=False,
-    color_=None
+    color_=None,
 ):
     """
     Create a point layer in napari.

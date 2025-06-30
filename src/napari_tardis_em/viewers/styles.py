@@ -10,7 +10,8 @@
 from typing import Union
 
 import numpy as np
-from PyQt5.QtWidgets import QDialog, QVBoxLayout
+from PyQt5.QtCore import QPropertyAnimation
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QWidget, QPushButton, QScrollArea, QSizePolicy, QFrame
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -173,3 +174,60 @@ def build_gird_with_masks(
                 else:
                     x_min += crop_size + gap_size
     return crop_grid_img, crop_grid_scores
+
+
+class CollapsibleBox(QWidget):
+    def __init__(self, title="", parent=None):
+        super().__init__(parent)
+
+        self.toggle_button = QPushButton(title)
+        self.toggle_button.setStyleSheet("text-align: center;")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(True)
+        self.toggle_button.clicked.connect(self.on_toggle)
+
+        self.content_area = QScrollArea()
+        self.content_area.setStyleSheet("border: none;")
+        self.content_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.content_area.setMaximumHeight(0)
+        self.content_area.setMinimumHeight(0)
+
+        self.content_frame = QFrame()
+        self.content_layout = QVBoxLayout()
+        self.content_frame.setLayout(self.content_layout)
+
+        self.content_area.setWidget(self.content_frame)
+        self.content_area.setWidgetResizable(True)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 2, 0, 2)
+        lay.addWidget(self.toggle_button)
+        lay.addWidget(self.content_area)
+
+        self.toggle_animation = QPropertyAnimation(self.content_area, b"maximumHeight")
+        self.toggle_animation.setDuration(200)
+
+    def on_toggle(self, checked):
+        content_height = self.content_frame.sizeHint().height()
+
+        if not checked:
+            self.toggle_animation.setStartValue(0)
+            self.toggle_animation.setEndValue(content_height)
+        else:
+            self.toggle_animation.setStartValue(content_height)
+            self.toggle_animation.setEndValue(0)
+
+        self.toggle_animation.start()
+
+    def setContentLayout(self, layout):
+        # Clear existing widgets
+        for i in reversed(range(self.content_layout.count())):
+            item = self.content_layout.itemAt(i)
+            widget = item.widget()
+            if widget:
+                widget.setParent(None)
+            else:
+                self.content_layout.removeItem(item)
+
+        self.content_layout.addLayout(layout)
+        self.on_toggle(True)

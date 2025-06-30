@@ -7,11 +7,8 @@
 #  Robert Kiewisz, Tristan Bepler                                     #
 #  MIT License 2024                                                   #
 #######################################################################
-from collections import defaultdict
 from os import getcwd
 from os.path import join
-
-from scipy.stats import norm
 
 import numpy as np
 import pandas as pd
@@ -19,7 +16,6 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox
 from PyQt5.QtWidgets import (
     QHBoxLayout,
-    QSlider,
     QVBoxLayout,
     QPushButton,
     QFormLayout,
@@ -33,10 +29,12 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from napari import Viewer
 from napari.utils.notifications import show_info
 from qtpy.QtWidgets import QWidget
+from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
 from sklearn.neighbors import KDTree
+from superqt import QRangeSlider
 
-from napari_tardis_em.viewers.styles import border_style
+from napari_tardis_em.viewers.styles import border_style, CollapsibleBox
 from napari_tardis_em.viewers.utils import create_point_layer
 from tardis_em.analysis.mt_classification.utils import assign_filaments_to_n_poles
 from tardis_em.analysis.filament_utils import (
@@ -92,6 +90,7 @@ class TardisWidget(QWidget):
 
         self.pixel_size_bt = QLineEdit("1.0")
         self.pixel_size_bt.setToolTip("Select correct pixel size for analysis")
+        self.pixel_size_bt.setMaximumWidth(60)
 
         self.resample_bt = QPushButton("Resample")
         self.resample_bt.clicked.connect(self.resample)
@@ -100,15 +99,18 @@ class TardisWidget(QWidget):
         self.pixel_resize_box.addWidget(self.pixel_size_bt)
         self.pixel_resize_box.addWidget(self.resample_bt)
 
-        self.edite_mode_bt_1 = QPushButton("Selected layer to points")
-        self.edite_mode_bt_1.setMinimumWidth(225)
+        self.edite_mode_bt_1 = QPushButton("Points")
         self.edite_mode_bt_1.clicked.connect(self.point_layer)
 
-        self.edite_mode_bt_2 = QPushButton("Selected layer to filament")
-        self.edite_mode_bt_2.setMinimumWidth(225)
+        self.edite_mode_bt_2 = QPushButton("Filament")
         self.edite_mode_bt_2.clicked.connect(self.track_layer)
 
+        self.edite_mode_box = QHBoxLayout()
+        self.edite_mode_box.addWidget(self.edite_mode_bt_1)
+        self.edite_mode_box.addWidget(self.edite_mode_bt_2)
+
         self.cluster_ends_th = QLineEdit("auto")
+        self.cluster_ends_th.setMaximumWidth(60)
         self.cluster_ends_1_bt = QPushButton("Cluster fibers")
         self.cluster_ends_1_bt.clicked.connect(self.cluster_ends)
         self.cluster_ends_box = QHBoxLayout()
@@ -123,16 +125,33 @@ class TardisWidget(QWidget):
 
         self.add_centrosome_auto_select = QComboBox()
         self.add_centrosome_auto_select.addItems(["1", "2", "3", "4"])
+        self.add_centrosome_auto_select.setEditable(True)
         self.add_centrosome_auto_select.setCurrentIndex(1)
-        self.add_centrosome_auto_bt = QPushButton("Detect centers")
+        self.add_centrosome_auto_bt = QPushButton("Auto")
         self.add_centrosome_auto_bt.clicked.connect(self.add_new_point_auto)
         self.add_centrosome_auto_box = QHBoxLayout()
         self.add_centrosome_auto_box.addWidget(self.add_centrosome_auto_select)
         self.add_centrosome_auto_box.addWidget(self.add_centrosome_auto_bt)
         self.add_centrosome_auto_box.addWidget(self.add_centrosome_1_bt)
 
-        self.save_bt = QPushButton("Save selected instance file")
+        self.save_bt = QPushButton("Save as Amira/CSV")
         self.save_bt.clicked.connect(self.save_edited_instances)
+
+        self.hist_bins_bt = QComboBox()
+        self.hist_bins_bt.addItems([
+            "auto",
+            "fd",
+            "doane",
+            "scott",
+            "stone",
+            "rice",
+            "sturges",
+            "sqrt",
+            "knuth",
+            "blocks"
+        ])
+        self.hist_bins_bt.setEditable(True)
+        self.hist_bins_bt.setCurrentIndex(5)
 
         """
         Filter
@@ -143,51 +162,116 @@ class TardisWidget(QWidget):
         # Filter by distance to a selected point
 
         # Filter length
-        self.filter_length = QSlider(Qt.Horizontal)
-        self.filter_length.valueChanged.connect(self.filter_value_changed)
+        self.filter_length = QRangeSlider(Qt.Horizontal)
         self.filter_length.setMinimum(0)
         self.filter_length.setMaximum(100)
-        self.filter_length.setValue(100)
-        self.filter_length_label = QLabel("0.0")
+        self.filter_length.setRange(0, 100)
+        self.filter_length.sliderReleased.connect(self.filter_value_changed)
+
+        self.filter_length_min_label = QLineEdit("0.0")
+        self.filter_length_min_label.setMaximumWidth(40)
+        self.filter_length_min_label.editingFinished.connect(self.filter_value_changed)
+        self.filter_length_max_label = QLineEdit("100.0")
+        self.filter_length_max_label.setMaximumWidth(40)
+        self.filter_length_max_label.editingFinished.connect(self.filter_value_changed)
+
         self.filter_length_box = QHBoxLayout()
-        self.filter_length_box.addWidget(self.filter_length_label)
+        self.filter_length_box.addWidget(self.filter_length_min_label)
         self.filter_length_box.addWidget(self.filter_length)
+        self.filter_length_box.addWidget(self.filter_length_max_label)
 
         # Filter by Curv
-        self.filter_curv = QSlider(Qt.Horizontal)
-        self.filter_curv.valueChanged.connect(self.filter_value_changed)
+        self.filter_curv = QRangeSlider(Qt.Horizontal)
         self.filter_curv.setMinimum(0)
         self.filter_curv.setMaximum(100)
-        self.filter_curv.setValue(100)
-        self.filter_curv_label = QLabel("0.0")
+        self.filter_curv.setRange(0, 100)
+        self.filter_curv.sliderReleased.connect(self.filter_value_changed)
+
+        self.filter_curv_min_label = QLineEdit("0.0")
+        self.filter_curv_min_label.setMaximumWidth(40)
+        self.filter_curv_min_label.editingFinished.connect(self.filter_value_changed)
+        self.filter_curv_max_label = QLineEdit("100.0")
+        self.filter_curv_max_label.setMaximumWidth(40)
+        self.filter_curv_max_label.editingFinished.connect(self.filter_value_changed)
+
         self.filter_curv_box = QHBoxLayout()
-        self.filter_curv_box.addWidget(self.filter_curv_label)
+        self.filter_curv_box.addWidget(self.filter_curv_min_label)
         self.filter_curv_box.addWidget(self.filter_curv)
+        self.filter_curv_box.addWidget(self.filter_curv_max_label)
 
         # Filter by Tortuosity
-        self.filter_tort = QSlider(Qt.Horizontal)
-        self.filter_tort.valueChanged.connect(self.filter_value_changed)
+        self.filter_tort = QRangeSlider(Qt.Horizontal)
         self.filter_tort.setMinimum(0)
         self.filter_tort.setMaximum(100)
-        self.filter_tort.setValue(100)
-        self.filter_tort_label = QLabel("0.0")
+        self.filter_tort.setRange(0, 100)
+        self.filter_tort.sliderReleased.connect(self.filter_value_changed)
+
+        self.filter_tort_min_label = QLineEdit("0.0")
+        self.filter_tort_min_label.setMaximumWidth(40)
+        self.filter_tort_min_label.editingFinished.connect(self.filter_value_changed)
+        self.filter_tort_max_label = QLineEdit("100.0")
+        self.filter_tort_max_label.setMaximumWidth(40)
+        self.filter_tort_min_label.editingFinished.connect(self.filter_value_changed)
+
         self.filter_tort_box = QHBoxLayout()
-        self.filter_tort_box.addWidget(self.filter_tort_label)
+        self.filter_tort_box.addWidget(self.filter_tort_min_label)
         self.filter_tort_box.addWidget(self.filter_tort)
+        self.filter_tort_box.addWidget(self.filter_tort_max_label)
+
+        # Filter by End Interaction dist
+        self.filter_end_inter_dist = QRangeSlider(Qt.Horizontal)
+        self.filter_end_inter_dist.setMinimum(0)
+        self.filter_end_inter_dist.setMaximum(100)
+        self.filter_end_inter_dist.setRange(0, 100)
+        self.filter_end_inter_dist.sliderReleased.connect(self.filter_value_changed)
+
+        self.filter_end_inter_dist_min_label = QLineEdit("0.0")
+        self.filter_end_inter_dist_min_label.setMaximumWidth(40)
+        self.filter_end_inter_dist_min_label.editingFinished.connect(self.filter_value_changed)
+        self.filter_end_inter_dist_max_label = QLineEdit("100.0")
+        self.filter_end_inter_dist_max_label.setMaximumWidth(40)
+        self.filter_end_inter_dist_max_label.editingFinished.connect(self.filter_value_changed)
+
+        self.filter_end_inter_dist_box = QHBoxLayout()
+        self.filter_end_inter_dist_box.addWidget(self.filter_end_inter_dist_min_label)
+        self.filter_end_inter_dist_box.addWidget(self.filter_end_inter_dist)
+        self.filter_end_inter_dist_box.addWidget(self.filter_end_inter_dist_max_label)
+
+        # Filter by End Interaction angle
+        self.filter_end_inter_angle = QRangeSlider(Qt.Horizontal)
+        self.filter_end_inter_angle.setMinimum(0)
+        self.filter_end_inter_angle.setMaximum(100)
+        self.filter_end_inter_angle.setRange(0, 100)
+        self.filter_end_inter_angle.sliderReleased.connect(self.filter_value_changed)
+
+        self.filter_end_inter_angle_min_label = QLineEdit("0.0")
+        self.filter_end_inter_angle_min_label.setMaximumWidth(40)
+        self.filter_end_inter_angle_min_label.editingFinished.connect(self.filter_value_changed)
+        self.filter_end_inter_angle_max_label = QLineEdit("100.0")
+        self.filter_end_inter_angle_max_label.setMaximumWidth(40)
+        self.filter_end_inter_angle_max_label.editingFinished.connect(self.filter_value_changed)
+
+        self.filter_end_inter_angle_box = QHBoxLayout()
+        self.filter_end_inter_angle_box.addWidget(self.filter_end_inter_angle_min_label)
+        self.filter_end_inter_angle_box.addWidget(self.filter_end_inter_angle)
+        self.filter_end_inter_angle_box.addWidget(self.filter_end_inter_angle_max_label)
 
         self.last_selected_obj = QLineEdit("None")
         self.last_selected_obj.setReadOnly(False)
+        self.last_selected_obj.setMaximumWidth(60)
 
         self.filter_to_selected_point_dist = QLineEdit("0")
+        self.filter_to_selected_point_dist.setMaximumWidth(60)
 
-        self.filter_to_selected_point_nearest = QPushButton("End Filter")
+        self.filter_to_selected_point_nearest = QPushButton("Ends")
         self.filter_to_selected_point_nearest.clicked.connect(
             self.filter_to_selected_point_nearest_
         )
-        self.filter_to_selected_obj = QPushButton("Dist. Filter")
+        self.filter_to_selected_obj = QPushButton("Filament")
         # self.filter_to_selected_obj.clicked.connect(self.filter_to_selected_obj_)
 
         self.filter_to_selected_point_box = QHBoxLayout()
+        self.filter_to_selected_point_box.addWidget(self.filter_to_selected_point_dist)
         self.filter_to_selected_point_box.addWidget(
             self.filter_to_selected_point_nearest
         )
@@ -222,6 +306,34 @@ class TardisWidget(QWidget):
         self.end_dist_box.addWidget(self.end_dist_plot)
         self.end_dist_box.addWidget(self.end_dist_save)
 
+        # End interactions
+        self.inter_ends_compute = QPushButton("Compute")
+        self.inter_ends_compute.clicked.connect(self.calc_inter_ends)
+        self.inter_ends_plot = QPushButton("Plot")
+        self.inter_ends_plot.clicked.connect(self.plot_inter_ends)
+        self.inter_ends_save = QPushButton("Save")
+        self.inter_ends_save.clicked.connect(self.save_inter_ends)
+
+        self.interaction_end_box = QHBoxLayout()
+        self.interaction_end_box.addWidget(self.inter_ends_compute)
+        self.interaction_end_box.addWidget(self.inter_ends_plot)
+        self.interaction_end_box.addWidget(self.inter_ends_save)
+
+        self.interaction_end_dict = {}
+
+        # Filament interactions
+        self.inter_filament_compute = QPushButton("Compute")
+        self.inter_filament_compute.clicked.connect(self.calc_inter_filament)
+        self.inter_filament_plot = QPushButton("Plot")
+        self.inter_filament_plot.clicked.connect(self.plot_inter_filament)
+        self.inter_filament_save = QPushButton("Save")
+        self.inter_filament_save.clicked.connect(self.save_inter_filament)
+
+        self.interaction_filament_box = QHBoxLayout()
+        self.interaction_filament_box.addWidget(self.inter_filament_compute)
+        self.interaction_filament_box.addWidget(self.inter_filament_plot)
+        self.interaction_filament_box.addWidget(self.inter_filament_save)
+
         # Curvature
         self.curv_compute = QPushButton("Compute")
         self.curv_compute.clicked.connect(self.calc_curv)
@@ -251,35 +363,52 @@ class TardisWidget(QWidget):
         """
         Initialized UI
         """
-        layout = QFormLayout()
+        layout = QVBoxLayout()
 
-        layout.addRow("---- Pre-setting ----", label_2)
-        layout.addRow("Pixel size", self.pixel_resize_box)
+        # ---- Pre-setting ----
+        pre_box = CollapsibleBox("---- Pre-setting ----")
+        pre_layout = QFormLayout()
+        pre_layout.addRow("Pixel size", self.pixel_resize_box)
+        pre_layout.addRow("Layer type", self.edite_mode_box)
+        pre_box.setContentLayout(pre_layout)
 
-        layout.addRow("", self.edite_mode_bt_1)
-        layout.addRow("", self.edite_mode_bt_2)
+        # ---- Parameters -----
+        param_box = CollapsibleBox("---- Parameters -----")
+        param_layout = QFormLayout()
+        param_layout.addRow("Add point [auto]", self.add_centrosome_auto_box)
+        param_layout.addRow("Cluster ends", self.cluster_ends_box)
+        param_layout.addRow("Hist. Bins", self.hist_bins_bt)
+        param_box.setContentLayout(param_layout)
 
-        layout.addRow("---- Parameters -----", label_anal)
-        layout.addRow("Add centrosome [auto]", self.add_centrosome_auto_box)
-        layout.addRow("Cluster ends", self.cluster_ends_box)
+        # ---- Filter ----
+        filter_box = CollapsibleBox("---- Filter ----")
+        filter_layout = QFormLayout()
+        filter_layout.addRow("By Length", self.filter_length_box)
+        filter_layout.addRow("By Curv.", self.filter_curv_box)
+        filter_layout.addRow("By Tort.", self.filter_tort_box)
+        filter_layout.addRow("Last selected", self.last_selected_obj)
+        filter_layout.addRow("Dist. to obj.", self.filter_to_selected_point_box)
+        filter_layout.addRow("End Interaction", self.filter_end_inter_dist_box)
+        filter_layout.addRow("End Interaction", self.filter_end_inter_angle_box)
+        filter_box.setContentLayout(filter_layout)
 
-        layout.addRow("---- Filter ----", label_2)
-        layout.addRow("By Length", self.filter_length_box)
-        layout.addRow("By Curv.", self.filter_curv_box)
-        layout.addRow("By Tort.", self.filter_tort_box)
+        # ---- Analysis ----
+        analysis_box = CollapsibleBox("---- Analysis ----")
+        analysis_layout = QFormLayout()
+        analysis_layout.addRow("Length", self.lenght_box)
+        analysis_layout.addRow("End Distance", self.end_dist_box)
+        analysis_layout.addRow("Interactions Lattices", self.interaction_filament_box)
+        analysis_layout.addRow("Interactions Ends", self.interaction_end_box)
+        analysis_layout.addRow("Curvature", self.curv_box)
+        analysis_layout.addRow("Tortuosity", self.tortuosity_box)
+        analysis_box.setContentLayout(analysis_layout)
 
-        layout.addRow("Last selected", self.last_selected_obj)
-        layout.addRow("Distance to object", self.filter_to_selected_point_dist)
-        layout.addRow("", self.filter_to_selected_point_box)
-
-        layout.addRow("---- Analysis ----", label_2)
-        layout.addRow("Length", self.lenght_box)
-        layout.addRow("End Distance", self.end_dist_box)
-        layout.addRow("Curvature", self.curv_box)
-        layout.addRow("Tortuosity", self.tortuosity_box)
-
-        layout.addRow("", label_2)
-        layout.addRow("Save Amira/CSV", self.save_bt)
+        # Add collapsible sections to the main layout
+        layout.addWidget(pre_box)
+        layout.addWidget(param_box)
+        layout.addWidget(filter_box)
+        layout.addWidget(analysis_box)
+        layout.addWidget(self.save_bt)
         self.setLayout(layout)
 
         self.viewer.mouse_double_click_callbacks.pop(0)
@@ -427,7 +556,7 @@ class TardisWidget(QWidget):
             options=options,
         )
 
-        if f_dir == '':
+        if f_dir == "":
             return
 
         if not f_dir.endswith((".csv", ".am")):
@@ -445,8 +574,16 @@ class TardisWidget(QWidget):
                 coords=data,
                 labels=labels,
                 scores=[
-                    [k for k, v in properties.items() if k != "ID" and not k.startswith("Label_")],
-                    [v for k, v in properties.items() if k != "ID" and not k.startswith("Label_")],
+                    [
+                        k
+                        for k, v in properties.items()
+                        if k != "ID" and not k.startswith("Label_")
+                    ],
+                    [
+                        v
+                        for k, v in properties.items()
+                        if k != "ID" and not k.startswith("Label_")
+                    ],
                 ],
             )
 
@@ -469,8 +606,8 @@ class TardisWidget(QWidget):
         data, name = self.get_selected_data(name=True)
         k = int(self.add_centrosome_auto_select.currentText())
 
-        unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
-        last_indices = np.array(list(first_indices[1:]) + [len(data)]) - first_indices
+        unique_ids, first_indices, count = np.unique(data[:, 0], return_index=True, return_counts=True)
+        last_indices = first_indices + count - 1
 
         data = np.vstack([data[first_indices, 1:], data[last_indices, 1:]])
 
@@ -491,16 +628,16 @@ class TardisWidget(QWidget):
 
     def add_new_point(self):
         name = "Centers"
-        zyx = show_coordinate_dialog()
+        xyz = show_coordinate_dialog()
 
         try:
             data = self.viewer.layers[name].data
             data = np.array(
                 (
                     self.viewer.layers[name].properties["ID"],
-                    data[:, 2],
-                    data[:, 1],
                     data[:, 0],
+                    data[:, 1],
+                    data[:, 2],
                 )
             ).T
             ids = np.max(data[:, 0]).item() + 1
@@ -509,7 +646,7 @@ class TardisWidget(QWidget):
             ids = 0
 
         try:
-            data = np.vstack([data, zyx])
+            data = np.vstack([data, xyz])
         except:
             data = np.vstack([data, np.zeros((1, 4))])
         data[-1, 0] = ids
@@ -525,7 +662,7 @@ class TardisWidget(QWidget):
 
     def cluster_ends(self):
         th = self.cluster_ends_th.text()
-        if th != 'auto':
+        if th != "auto":
             th = float(th)
 
         data, name, properties = self.get_selected_data(name=True, properties=True)
@@ -569,7 +706,9 @@ class TardisWidget(QWidget):
             _, first_idx_filament = np.unique(i[:, 0], return_index=True)
 
             # get points with indexes and groupped and add to list
-            grouped_filaments.extend(group_points_by_distance(i[first_idx_filament, :], eps=th))
+            grouped_filaments.extend(
+                group_points_by_distance(i[first_idx_filament, :], eps=th)
+            )
 
         grouped_label = np.zeros(len(np.unique(data[:, 0])))
         id_ = 1
@@ -579,7 +718,7 @@ class TardisWidget(QWidget):
             id_ += 1
 
         grouped_label = np.repeat(grouped_label, point_no)
-        filaments_labels['Label_Grouped_Ends'] = grouped_label
+        filaments_labels["Label_Grouped_Ends"] = grouped_label
 
         create_point_layer(
             viewer=self.viewer,
@@ -588,10 +727,22 @@ class TardisWidget(QWidget):
             add_properties=filaments_labels,
             visibility=True,
             as_filament=True,
-            color_='viridis'
+            color_="viridis",
         )
 
     def filter_value_changed(self):
+        line_edit = False
+        sender = self.sender()
+
+        if sender in [
+            self.filter_length_min_label, self.filter_length_max_label,
+            self.filter_curv_min_label, self.filter_curv_max_label,
+            self.filter_tort_min_label, self.filter_tort_max_label,
+            self.filter_end_inter_angle_min_label, self.filter_end_inter_angle_max_label,
+            self.filter_end_inter_dist_min_label, self.filter_end_inter_dist_max_label,
+        ]:
+            line_edit = True
+
         try:
             data, name, properties = self.get_selected_data(name=True, properties=True)
         except:
@@ -603,58 +754,149 @@ class TardisWidget(QWidget):
         # Filter by % given as value = min_val + x * (max_val - min_val)
         filter_ = False
         if "Length" in properties:
-            filter_length = self.filter_length.value()
-            filter_length /= 100
+            if line_edit:
+                filter_length_min, filter_length_max = float(self.filter_length_min_label.text()), float(self. filter_length_max_label.text())
+            else:
+                filter_length_min, filter_length_max = self.filter_length.value()
+                filter_length_min /= 100
+                filter_length_max /= 100
 
             filter_ = True
             length = properties["Length"]
-            l_min = min(length)
-            l_max = max(length)
+            if not line_edit:
+                l_min = min(length)
+                l_max = max(length)
 
-            filter_length_value = l_min + filter_length * (l_max - l_min)
-            self.filter_length_label.setText(f"{int(filter_length_value)}")
+                filter_length_value_min = l_min + filter_length_min * (l_max - l_min)
+                filter_length_value_max = l_min + filter_length_max * (l_max - l_min)
+                self.filter_length_min_label.setText(f"{int(filter_length_value_min)}")
+                self.filter_length_max_label.setText(f"{int(filter_length_value_max)}")
 
-            filter_length_bool = length <= filter_length_value
+                filter_length_bool = np.logical_and(filter_length_value_min <= length, length <= filter_length_value_max)
+            else:
+                filter_length_bool = np.logical_and(filter_length_min <= length,
+                                                    length <= filter_length_max)
         else:
             filter_length_bool = np.ones(len(data), dtype=bool)
 
         if "Curvature" in properties:
-            filter_curv = self.filter_curv.value()
-            filter_curv /= 100
+            if line_edit:
+                filter_length_min, filter_length_max = float(self.filter_curv_min_label.text()), float(self. filter_curv_max_label.text())
+            else:
+                filter_curv_min, filter_curv_max = self.filter_curv.value()
+                filter_curv_min /= 100
+                filter_curv_max /= 100
 
             filter_ = True
             curvature = properties["Curvature"]
-            c_min = min(curvature)
-            c_max = max(curvature)
-            filter_curv_value = c_min + filter_curv * (c_max - c_min)
+            if not line_edit:
+                c_min = min(curvature)
+                c_max = max(curvature)
+                filter_curv_min_value = c_min + filter_curv_min * (c_max - c_min)
+                filter_curv_max_value = c_min + filter_curv_max * (c_max - c_min)
 
-            self.filter_curv_label.setText(f"{int(filter_curv_value):.3f}")
+                self.filter_curv_min_label.setText(f"{int(filter_curv_min_value):.3f}")
+                self.filter_curv_max_label.setText(f"{int(filter_curv_max_value):.3f}")
 
-            filter_curv_bool = curvature <= filter_curv_value
+                filter_curv_bool = np.logical_and(filter_curv_min_value <= curvature, curvature <= filter_curv_max_value)
+            else:
+                filter_curv_bool = np.logical_and(filter_length_min <= curvature,
+                                                    curvature <= filter_length_max)
         else:
             filter_curv_bool = np.ones(len(data), dtype=bool)
 
         if "Tortuosity" in properties:
-            filter_tort = self.filter_tort.value()
-            filter_tort /= 100
+            if line_edit:
+                filter_tort_min, filter_tort_max = float(self.filter_tort_min_label.text()), float(self. filter_tort_max_label.text())
+            else:
+                filter_tort_min, filter_tort_max = self.filter_tort.value()
+                filter_tort_min /= 100
+                filter_tort_max /= 100
 
             filter_ = True
             tortuosity = properties["Tortuosity"]
-            t_min = min(tortuosity)
-            t_max = max(tortuosity)
-            filter_tort_value = t_min + filter_tort * (t_max - t_min)
+            if not line_edit:
+                t_min = min(tortuosity)
+                t_max = max(tortuosity)
+                filter_tort_min_value = t_min + filter_tort_min * (t_max - t_min)
+                filter_tort_max_value = t_min + filter_tort_max * (t_max - t_min)
 
-            self.filter_tort_label.setText(f"{float(filter_tort_value):.2f}")
+                self.filter_tort_min_label.setText(f"{float(filter_tort_min_value):.2f}")
+                self.filter_tort_max_label.setText(f"{float(filter_tort_max_value):.2f}")
 
-            filter_tort_bool = tortuosity <= filter_tort_value
+                filter_tort_bool = np.logical_and(filter_tort_min_value <= tortuosity,
+                                                  tortuosity <= filter_tort_max_value)
+            else:
+                filter_tort_bool = np.logical_and(filter_tort_min <= tortuosity,
+                                                    tortuosity <= filter_tort_max)
         else:
             filter_tort_bool = np.ones(len(data), dtype=bool)
 
+        if "Branching_Distance" in properties:
+            if line_edit:
+                filter_dist_min, filter_dist_max = float(self.filter_end_inter_dist_min_label.text()), float(self. filter_end_inter_dist_max_label.text())
+            else:
+                filter_dist_min, filter_dist_max = self.filter_end_inter_dist.value()
+                filter_dist_min /= 100
+                filter_dist_max /= 100
+
+            filter_ = True
+            end_inter_dist = properties["Branching_Distance"]
+            if not line_edit:
+                d_min = min(end_inter_dist)
+                d_max = max(end_inter_dist)
+                filter_dist_min_value = d_min + filter_dist_min * (d_max - d_min)
+                filter_dist_max_value = d_min + filter_dist_max * (d_max - d_min)
+
+                self.filter_end_inter_dist_min_label.setText(f"{float(filter_dist_min_value):.2f}")
+                self.filter_end_inter_dist_max_label.setText(f"{float(filter_dist_max_value):.2f}")
+
+                filter_end_dist_inter_bool = np.logical_and(filter_dist_min_value <= end_inter_dist,
+                                                            end_inter_dist <= filter_dist_max_value)
+            else:
+                filter_end_dist_inter_bool = np.logical_and(filter_dist_min <= end_inter_dist,
+                                                            end_inter_dist <= filter_dist_max)
+        else:
+            filter_end_dist_inter_bool = np.ones(len(data), dtype=bool)
+
+        if "Branching_Angle" in properties:
+            if line_edit:
+                filter_angle_min, filter_angle_max = float(self.filter_end_inter_angle_min_label.text()), float(
+                    self.filter_end_inter_angle_max_label.text())
+            else:
+                filter_angle_min, filter_angle_max = self.filter_end_inter_angle.value()
+                filter_angle_min /= 100
+                filter_angle_max /= 100
+
+            filter_ = True
+            end_inter_angle = properties["Branching_Angle"]
+            if not line_edit:
+                a_min = min(end_inter_angle)
+                a_max = max(end_inter_angle)
+                filter_angle_min_value = a_min + filter_angle_min * (a_max - a_min)
+                filter_angle_max_value = a_min + filter_angle_max * (a_max - a_min)
+
+                self.filter_end_inter_angle_min_label.setText(f"{float(filter_angle_min_value):.2f}")
+                self.filter_end_inter_angle_max_label.setText(f"{float(filter_angle_max_value):.2f}")
+
+                filter_end_angle_inter_bool = np.logical_and(filter_angle_min_value <= end_inter_angle,
+                                                             end_inter_angle <= filter_angle_max_value)
+            else:
+                filter_end_angle_inter_bool = np.logical_and(filter_angle_min <= end_inter_angle,
+                                                             end_inter_angle <= filter_angle_max)
+        else:
+            filter_end_angle_inter_bool = np.ones(len(data), dtype=bool)
+
         filter_anals_bool = np.logical_and.reduce(
-            [filter_length_bool, filter_curv_bool, filter_tort_bool], axis=0
+            [filter_length_bool, filter_curv_bool, filter_tort_bool,
+             filter_end_dist_inter_bool, filter_end_angle_inter_bool], axis=0
         )
 
-        if filter_ and not np.all(filter_anals_bool):
+        if not np.all(filter_anals_bool):
+            show_info('Filter-out all filaments, reduce your filters!')
+            return
+
+        if filter_:
             data = data[filter_anals_bool]
             for k, v in properties.items():
                 properties[k] = v[filter_anals_bool]
@@ -671,6 +913,7 @@ class TardisWidget(QWidget):
             )
 
     def filter_to_selected_point_nearest_(self):
+        self.resample()
         data, name, properties = self.get_selected_data(name=True, properties=True)
 
         layers = [layer.name for layer in self.viewer.layers]
@@ -685,10 +928,8 @@ class TardisWidget(QWidget):
             filter_to = self.get_data_by_name(layer[0])[int(float(last_obj[1]))][1:]
 
             # Get tracks ends
-            _, first_indices = np.unique(data[:, 0], return_index=True)
-            last_indices = (
-                np.array(list(first_indices[1:]) + [len(data)]) - first_indices
-            )
+            _, first_indices, count = np.unique(data[:, 0], return_index=True, return_counts=True)
+            last_indices = first_indices + count - 1
 
             track_ends_idx = np.hstack([first_indices, last_indices])
             track_ends = data[track_ends_idx]
@@ -773,14 +1014,16 @@ class TardisWidget(QWidget):
             _, first_indices = np.unique(data[:, 0], return_index=True)
             lengths = properties["Length"][first_indices]
         except KeyError:
-            lengths = np.array(length_list(data))
+            return
 
+        print(self.hist_bins_bt.currentText(),)
         self.plot_universal.show()
         self.plot_universal.update_hist(
             lengths,
             title="Length Distribution",
             y_label="Counts",
             x_label="Length [U]",
+            bins_=self.hist_bins_bt.currentText(),
         )
 
     def save_length(self):
@@ -815,10 +1058,8 @@ class TardisWidget(QWidget):
             filter_to = self.get_data_by_name(layer[0])
 
             # Get tracks ends
-            unique_id, first_indices = np.unique(data[:, 0], return_index=True)
-            last_indices = (
-                np.array(list(first_indices[1:]) + [len(data)]) - first_indices
-            )
+            unique_id, first_indices, count = np.unique(data[:, 0], return_index=True, return_counts=True)
+            last_indices = first_indices + count - 1
 
             track_ends_idx = np.hstack([first_indices, last_indices])
             track_ends = data[track_ends_idx]
@@ -827,23 +1068,31 @@ class TardisWidget(QWidget):
             distances = [
                 np.linalg.norm(track_ends[:, 1:] - i[1:], axis=1) for i in filter_to
             ]
+
             distances = np.vstack(
                 [np.vstack([track_ends[:, 0], i]).T for i in distances]
             )
 
             # Combine distances and track_ends select closest end idx and distance
+            dist_idx = np.array(
+                [np.argmin(distances[distances[:, 0] == uid, 1]) for uid in unique_id]
+            )
+
+            dist_idx = np.floor_divide(dist_idx, 2) + 1
             distances = np.array(
                 [np.min(distances[distances[:, 0] == uid, 1]) for uid in unique_id]
             )
 
             point_no = np.array(list(first_indices[1:]) + [len(data)]) - first_indices
             distances = np.repeat(distances, point_no)
+            dist_idx = np.repeat(dist_idx, point_no)
 
             create_point_layer(
                 viewer=self.viewer,
                 points=data,
                 name=name,
-                add_properties={"nearest_end_distance": distances},
+                add_properties={"nearest_end_idx": dist_idx,
+                                "nearest_end_distance": distances,},
                 visibility=True,
                 as_filament=True,
             )
@@ -857,7 +1106,7 @@ class TardisWidget(QWidget):
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
             ends = properties["nearest_end_distance"][first_indices]
         except KeyError:
-            ends = np.array(curvature_list(data, mean_b=True))
+            return
 
         self.plot_universal.show()
         self.plot_universal.update_hist(
@@ -866,6 +1115,7 @@ class TardisWidget(QWidget):
             y_label="Counts",
             x_label="End Distance [U]",
             FWHM=True,
+            bins_ = self.hist_bins_bt.currentText(),
         )
 
     def save_end_dist(self):
@@ -873,10 +1123,162 @@ class TardisWidget(QWidget):
 
         ids, first_indices = np.unique(data[:, 0], return_index=True)
         lengths = properties["nearest_end_distance"][first_indices]
+        end_idx = properties["nearest_end_idx"][first_indices]
 
-        x = pd.DataFrame(np.vstack([ids, lengths]).T)
-        header = ["IDs", "End Distance [U]"]
+        x = pd.DataFrame(np.vstack([ids, lengths, end_idx]).T)
+        header = ["IDs", "End Distance [U]", "End Index"]
         self._save_csv(x, header)
+
+    def calc_inter_ends(self):
+        data, name = self.get_selected_data(name=True, properties=False)
+        properties = {}
+
+        layers = [layer.name for layer in self.viewer.layers]
+        types_ = [layer.__class__.__name__ for layer in self.viewer.layers]
+
+        last_obj = self.last_selected_obj.text().split(";")
+
+        if last_obj[0] == "None":
+            try:
+                idx = types_.index("Points")
+            except ValueError:
+                return
+
+            layer = [self.viewer.layers[idx].name]
+        else:
+            layer = [n for n in layers if n.startswith(last_obj[0])]
+
+        if len(layer) == 0:
+            show_info(f"No point layer found. Add points to continue.")
+            return
+
+        # Sort filaments with minus ends
+        poles = self.get_data_by_name(layer[0])
+        filaments = assign_filaments_to_n_poles(data, poles[:, 1:])
+        filaments = np.vstack(filaments).astype(np.float32)
+
+        _, point_no = np.unique(filaments[:, 0], return_counts=True)
+        _, first_indices, count = np.unique(filaments[:, 0], return_index=True, return_counts=True)
+        last_indices = first_indices + count - 1
+
+        ends = filaments[first_indices].astype(np.float32)
+
+        properties["Branching_Distance"] = cdist(ends[:, 1:], filaments[:, 1:])
+        for i, (f, l) in enumerate(zip(first_indices, last_indices)):
+            properties["Branching_Distance"][i, f:l] = np.nan
+
+        child_id = np.nanargmin(properties["Branching_Distance"], axis=1)
+
+        properties["Branching_Distance"] = properties["Branching_Distance"][np.arange(len(ends)), child_id]
+        properties["Branching_Parent_F_ID"] = ends[:, 0]
+        properties["Branching_Child_F_ID"] = filaments[child_id, 0]
+        properties["Branching_Child_P_ID"] = child_id
+
+        angles = np.zeros(len(ends[:, 0]))
+        for i, interaction in enumerate(zip(ends[:, 0], filaments[child_id, 0], child_id)):
+            parent_id, child_id, child_point_id = interaction
+
+            # Get parent spline points (first 3 points)
+            parent_mask = filaments[:, 0] == parent_id
+            parent_points = filaments[parent_mask, 1:4][:3]
+
+            # Get child spline points, handling edge cases
+            child_mask = filaments[:, 0] == child_id
+            child_indices = np.where(child_mask)[0]
+            # child_points = filaments[child_mask, 1:4]
+
+            # Determine the slice for child points
+            if child_point_id == child_indices[0]:
+                # At the start of spline, take the first 3 points
+                child_points = filaments[child_point_id:child_point_id+3, 1:4]
+            elif child_point_id == child_indices[-1]:
+                # At end of spline, take the last 3 points
+                child_points = filaments[child_point_id-3:child_point_id, 1:4]
+            else:
+                child_points = filaments[child_point_id-1:child_point_id+1, 1:4]
+
+            # Compute vectors
+            parent_vec = parent_points[-1] - parent_points[0]
+            child_vec = child_points[-1] - child_points[0]
+
+            # Compute angle
+            cos_angle = np.dot(parent_vec, child_vec) / (
+                    np.linalg.norm(parent_vec) * np.linalg.norm(child_vec)
+            )
+
+            # Handle numerical precision
+            cos_angle = np.clip(cos_angle, -1.0, 1.0)
+
+            # Convert to degrees and ensure 0-90 range
+            angle = np.degrees(np.arccos(np.abs(cos_angle)))
+            angles[i] = angle
+        # B = filaments[properties["Branching_Child_F_ID"].astype(np.int32), 1:]
+        # C = properties["Branching_Child_F_ID"] + 2
+        # if np.any(C > len(filaments)):
+        #     C[C > len(filaments)] -= 4
+        # C = filaments[C.astype(np.int32), 1:]
+
+        # # A is and - B is filament - C is extension of filament
+        # BA = B - filaments[first_indices + 2, 1:]
+        # BC = (B - C)[None, ...]
+        # dot_products = np.sum(BA * BC, axis=-1)
+
+        properties["Branching_Angle"] = angles
+        b_idx = properties["Branching_Parent_F_ID"].astype(np.int32)
+        for k, v in properties.items():
+            properties[k] = properties[k][b_idx]
+            properties[k] = np.repeat(properties[k], point_no)
+
+        create_point_layer(
+            viewer=self.viewer,
+            points=data,
+            name=name,
+            add_properties=properties,
+            visibility=True,
+            as_filament=True,
+        )
+
+    def plot_inter_ends(self):
+        data, name, properties = self.get_selected_data(name=True, properties=True)
+
+        try:
+            unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
+            dist = properties["Branching_Distance"][first_indices]
+            angle = properties["Branching_Angle"][first_indices]
+        except KeyError:
+            return
+
+        self.plot_universal.show()
+        self.plot_universal.update_hist_list(
+            [dist, angle],
+            titles=["Branching End Distances Distribution", "Branching End Angle Distribution"],
+            y_label=["Counts", "Counts"],
+            x_label=["Distance", "Angle"],
+            bins_=self.hist_bins_bt.currentText(),
+        )
+
+    def save_inter_ends(self):
+        data, name, properties = self.get_selected_data(name=True, properties=True)
+
+        ids, first_indices = np.unique(data[:, 0], return_index=True)
+        bpf_ID = properties["Branching_Parent_F_ID"][first_indices]
+        bcf_ID = properties["Branching_Child_F_ID"][first_indices]
+        bcp_ID = properties["Branching_Child_P_ID"][first_indices]
+        dist = properties["Branching_Distance"][first_indices]
+        angle = properties["Branching_Angle"][first_indices]
+
+        x = pd.DataFrame(np.vstack([bpf_ID, bcf_ID, bcp_ID, dist, angle]).T)
+        header = ["Branching Parent ID", "Branching Child ID", "Branching Child point ID", "Branching Distance [U]", "Branching Angle [deg]"]
+        self._save_csv(x, header)
+
+    def calc_inter_filament(self):
+        pass
+
+    def plot_inter_filament(self):
+        pass
+
+    def save_inter_filament(self):
+        pass
 
     def calc_curv(self):
         data, name = self.get_selected_data(name=True)
@@ -904,7 +1306,7 @@ class TardisWidget(QWidget):
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
             curv = properties["Curvature"][first_indices]
         except KeyError:
-            curv = np.array(curvature_list(data, mean_b=True))
+            return
 
         self.plot_universal.show()
         self.plot_universal.update_hist(
@@ -912,6 +1314,7 @@ class TardisWidget(QWidget):
             title="Curvature Distribution",
             y_label="Counts",
             x_label="Curvature",
+            bins_=self.hist_bins_bt.currentText(),
         )
 
     def save_curv(self):
@@ -950,7 +1353,7 @@ class TardisWidget(QWidget):
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
             tortuosity = properties["Tortuosity"][first_indices]
         except KeyError:
-            tortuosity = np.array(curvature_list(data, mean_b=True))
+            return
 
         self.plot_universal.show()
         self.plot_universal.update_hist(
@@ -958,6 +1361,7 @@ class TardisWidget(QWidget):
             title="Tortuosity Distribution",
             y_label="Tortuosity",
             x_label="Distribution",
+            bins_=self.hist_bins_bt.currentText(),
         )
 
     def save_tortuosity(self):
@@ -1009,7 +1413,7 @@ class PlotPopup(QDialog):
             self.canvas.draw()
 
     def update_hist(
-        self, y, title, y_label="Length", x_label="Distribution", FWHM=False
+        self, y, title, y_label="Length", x_label="Distribution", FWHM=False, bins_='rice'
     ):
         if len(y) > 0:
             y = [round(value, 6) for value in y]
@@ -1019,18 +1423,22 @@ class PlotPopup(QDialog):
             # Create two subplots side by side
             ax1 = self.figure.add_subplot(111)  # 1 row, 1 columns, 1st subplot
 
-            bins = np.histogram_bin_edges(y, bins='rice')
+            try:
+                bins_ = int(bins_)
+            except ValueError:
+                bins_ = np.histogram_bin_edges(y, bins=bins_)
+
             if FWHM:
                 counts, bins, _ = ax1.hist(
                     y,
-                    bins=int(len(y) / 100) if len(y) > 1000 else 'fd',
+                    bins=bins,
                     density=True,
                     color="skyblue",
                     edgecolor="black",
                 )
                 ax1.hist(
                     y,
-                    bins=int(len(y) / 100) if len(y) > 1000 else 'fd',
+                    bins=bins,
                     density=True,
                     color="skyblue",
                     edgecolor="black",
@@ -1095,12 +1503,37 @@ class PlotPopup(QDialog):
                 )
                 ax1.legend()
             else:
-                ax1.hist(y, bins="fd", density=True, color="skyblue", edgecolor="black")
+                ax1.hist(y, bins=bins_, density=True, color="skyblue", edgecolor="black")
 
             ax1.set_xlabel(x_label)
             ax1.set_ylabel(y_label)
             ax1.set_title(title)
             self.canvas.draw()
+
+    def update_hist_list(self, y, titles, y_label=["Length"], x_label=["Distribution"], bins_="rice"):
+        if not isinstance(y, list):
+            return
+
+        for idx, i in enumerate(y):
+            y[idx] = [round(value, 6) for value in i]
+
+        self.figure.clear()
+        for idx, values in enumerate(y):
+            try:
+                bins = int(bins_)
+            except ValueError:
+                bins = np.histogram_bin_edges(y, bins=bins_)
+
+            ax = self.figure.add_subplot(len(y), 1, idx + 1)
+            ax.hist(values, bins=bins, density=True,
+                    color="skyblue", edgecolor="black")
+
+            ax.set_xlabel(x_label[idx])
+            ax.set_ylabel(y_label[idx])
+            ax.set_title(titles[idx])
+
+        self.figure.tight_layout()
+        self.canvas.draw()
 
 
 def show_coordinate_dialog():
@@ -1135,7 +1568,7 @@ def show_coordinate_dialog():
             y = float(y_input.text())
             x = float(x_input.text())
 
-            return np.array([[0, z, y, x]])
+            return np.array([[0, x, y, z]])
         except ValueError:
             show_info("Invalid input: Please enter valid numbers for coordinates.")
 

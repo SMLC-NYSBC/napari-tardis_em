@@ -202,8 +202,8 @@ class TardisWidget(QWidget):
         label_4 = QLabel("Setting user is not advice to change")
         label_4.setStyleSheet(border_style("red"))
 
-        self.normalize_px = QLineEdit("None")
-        self.normalize_px.setValidator(QDoubleValidator(1, 10000, 3))
+        self.normalize_px = QLineEdit("25.0")
+        # self.normalize_px.setValidator(QDoubleValidator(1, 10000, 3))
         self.normalize_px.setToolTip(
             "Optionally, if select normalization pixel size value if you specified it"
             "during your CNN training. Type None to disable normalization, or 0.0 to use default"
@@ -553,9 +553,9 @@ class TardisWidget(QWidget):
                     )
 
                     self.predictor.graphs = self.predictor.predict_DIST(
-                        id_=0, id_name=self.dir.split("/")[-1]
+                        id_i=0, id_name=self.dir.split("/")[-1]
                     )
-                    self.predictor.postprocess_DIST(id_=0, i=self.dir.split("/")[-1])
+                    self.predictor.postprocess_DIST(id_i=0, i=self.dir.split("/")[-1])
 
                     if self.predictor.segments is None:
                         show_info("TARDIS-em could not find any instances :(")
@@ -565,7 +565,7 @@ class TardisWidget(QWidget):
                             f"TARDIS-em found {int(np.max(self.predictor.segments[:, 0]))} instances :)"
                         )
                         self.predictor.save_instance_PC(self.dir.split("/")[-1])
-                        clean_up(dir_=self.dir)
+                        clean_up(dir_s=self.dir)
                     show_info("Finished Instance Prediction !")
 
             worker = predict_dist()
