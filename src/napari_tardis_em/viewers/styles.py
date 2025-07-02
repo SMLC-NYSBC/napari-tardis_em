@@ -11,7 +11,15 @@ from typing import Union
 
 import numpy as np
 from PyQt5.QtCore import QPropertyAnimation
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QWidget, QPushButton, QScrollArea, QSizePolicy, QFrame
+from PyQt5.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QWidget,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QFrame,
+)
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
