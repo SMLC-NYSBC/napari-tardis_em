@@ -3,7 +3,7 @@ setuptools>=70.3.0
 napari>=0.5.0
 
 torch>=2.2.2
-tardis_em[nd2]>=0.3.14
+tardis_em[nd2]>=0.3.15
 
 numpy>=2.0.0
 
