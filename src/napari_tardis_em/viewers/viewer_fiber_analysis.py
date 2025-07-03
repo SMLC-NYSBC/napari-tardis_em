@@ -635,16 +635,16 @@ class TardisWidget(QWidget):
 
     def add_new_point(self):
         name = "Centers"
-        xyz = show_coordinate_dialog()
+        xyz = show_coordinate_dialog()  # [:, [0, 3, 2, 1]]
 
         try:
             data = self.viewer.layers[name].data
             data = np.array(
                 (
                     self.viewer.layers[name].properties["ID"],
-                    data[:, 0],
-                    data[:, 1],
-                    data[:, 2],
+                    data[:, 2],  # Z
+                    data[:, 1],  # Y
+                    data[:, 0],  # X
                 )
             ).T
             ids = np.max(data[:, 0]).item() + 1
@@ -652,11 +652,11 @@ class TardisWidget(QWidget):
             data = np.zeros((0, 4))
             ids = 0
 
-        try:
+        if xyz.shape == (1, 4):
+            print(f'Data: {data} \n xyz: {xyz}')
             data = np.vstack([data, xyz])
-        except:
-            data = np.vstack([data, np.zeros((1, 4))])
-        data[-1, 0] = ids
+            data[-1, 0] = ids
+            print(f'Stitched: {data}')
 
         create_point_layer(
             viewer=self.viewer,
