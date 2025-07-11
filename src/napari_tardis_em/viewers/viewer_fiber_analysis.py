@@ -523,6 +523,7 @@ class TardisWidget(QWidget):
 
     def save_edited_instances(self):
         selected = self.viewer.layers.selection
+
         if len(selected) == 0:
             return
         elif len(selected) == 1:
@@ -534,23 +535,6 @@ class TardisWidget(QWidget):
                 data.append(d)
                 name.append(i.name)
                 properties.append(p)
-
-        ids, first_indices = np.unique(data[:, 0], return_index=True)
-        properties = {
-            k: v[first_indices] for k, v in properties.items() if k != "track_id"
-        }
-
-        if any(key.startswith("Label_") for key in properties):
-            labels = [
-                [k for k, v in properties.items() if k.startswith("Label_")],
-                [v for k, v in properties.items() if k.startswith("Label_")],
-            ]
-            labels = group_indices_by_value(labels)
-        else:
-            labels = None
-
-        x = pd.DataFrame(np.array(list(properties.values())).T)
-        header = list(properties.keys())
 
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
@@ -571,25 +555,43 @@ class TardisWidget(QWidget):
                 f_dir = f_dir + ".am"
 
         if f_dir.endswith(".csv"):
-            self._save_csv(x, header, f_dir=f_dir)
+            data = pd.DataFrame(data)
+            header = ['ID', 'X', 'Y', 'Z'] + [k if k.startswith(["Label_", "Score_", "Score_P_"]) else k[6:] for k in properties.keys()]
+
+            data = pd.concat([data, pd.DataFrame(np.array(list(properties.values())).T)], axis=1)
+            self._save_csv(data, header, f_dir=f_dir)
         elif f_dir.endswith(".am"):
+            ids, first_indices = np.unique(data[:, 0], return_index=True)
+
+            properties_idx = {
+                k: v[first_indices] for k, v in properties.items() if k != "track_id"
+            }
+            properties = {
+                k: v for k, v in properties.items() if k != "track_id"
+            }
+
+            if any(key.startswith("Label_") for key in properties_idx):
+                labels = {k[6:]: np.where(v-1)[0] for k, v in properties_idx.items() if k.startswith("Label_")}
+            else:
+                labels = None
+
+            if any(key.startswith("Score_") for key in properties_idx):
+                scores_segments = {k[6:]: v for k, v in properties_idx.items() if k.startswith("Score_")}
+            else:
+                scores_segments = None
+
+            if any(key.startswith("Score_P_") for key in properties):
+                scores_points = {k[8:]: v for k, v in properties.items() if k.startswith("Score_P_")}
+            else:
+                scores_points = None
+
             amira = NumpyToAmira()
             amira.export_amiraV2(
                 file_dir=f_dir,
                 coords=data,
-                labels=labels,
-                scores=[
-                    [
-                        k
-                        for k, v in properties.items()
-                        if k != "ID" and not k.startswith("Label_")
-                    ],
-                    [
-                        v
-                        for k, v in properties.items()
-                        if k != "ID" and not k.startswith("Label_")
-                    ],
-                ],
+                labels_segment=labels,
+                scores_segment=scores_segments,
+                scores_points=scores_points,
             )
 
     def resample(self):
@@ -749,11 +751,9 @@ class TardisWidget(QWidget):
         if len(properties) == 0 or properties is None:
             return
 
-        # Filter by % given as value = min_val + x * (max_val - min_val)
-        filter_ = False
-        if "Length" in properties:
+        if "Score_Length" in properties:
             filter_ = True
-            length = properties["Length"]
+            length = properties["Score_Length"]
             _min = min(length)
             _max = max(length)
 
@@ -795,9 +795,9 @@ class TardisWidget(QWidget):
         else:
             filter_length_bool = np.ones(len(data), dtype=bool)
 
-        if "Curvature" in properties:
+        if "Score_Curvature" in properties:
             filter_ = True
-            curvature = properties["Curvature"]
+            curvature = properties["Score_Curvature"]
             _min = min(curvature)
             _max = max(curvature)
 
@@ -839,9 +839,9 @@ class TardisWidget(QWidget):
         else:
             filter_curve_bool = np.ones(len(data), dtype=bool)
 
-        if "Tortuosity" in properties:
+        if "Score_Tortuosity" in properties:
             filter_ = True
-            tortuosity = properties["Tortuosity"]
+            tortuosity = properties["Score_Tortuosity"]
             _min = min(tortuosity)
             _max = max(tortuosity)
 
@@ -883,9 +883,9 @@ class TardisWidget(QWidget):
         else:
             filter_tort_bool = np.ones(len(data), dtype=bool)
 
-        if "Branching_Distance" in properties:
+        if "Score_Branching_Distance" in properties:
             filter_ = True
-            end_inter_dist = properties["Branching_Distance"]
+            end_inter_dist = properties["Score_Branching_Distance"]
             _min = min(end_inter_dist)
             _max = max(end_inter_dist)
 
@@ -930,9 +930,9 @@ class TardisWidget(QWidget):
         else:
             filter_end_dist_inter_bool = np.ones(len(data), dtype=bool)
 
-        if "Branching_Angle" in properties:
+        if "Score_Branching_Angle" in properties:
             filter_ = True
-            end_inter_angle = properties["Branching_Angle"]
+            end_inter_angle = properties["Score_Branching_Angle"]
             _min = min(end_inter_angle)
             _max = max(end_inter_angle)
 
@@ -1095,7 +1095,7 @@ class TardisWidget(QWidget):
         point_no = np.array(list(first_indices[1:]) + [len(data)]) - first_indices
         lengths = np.repeat(lengths, point_no)
 
-        properties = {"Length": lengths}
+        properties = {"Score_Length": lengths}
 
         create_point_layer(
             viewer=self.viewer,
@@ -1111,7 +1111,7 @@ class TardisWidget(QWidget):
 
         try:
             _, first_indices = np.unique(data[:, 0], return_index=True)
-            lengths = properties["Length"][first_indices]
+            lengths = properties["Score_Length"][first_indices]
         except KeyError:
             return
 
@@ -1131,7 +1131,7 @@ class TardisWidget(QWidget):
         data, name, properties = self.get_selected_data(name=True, properties=True)
 
         ids, first_indices = np.unique(data[:, 0], return_index=True)
-        lengths = properties["Length"][first_indices]
+        lengths = properties["Score_Length"][first_indices]
 
         x = pd.DataFrame(np.vstack([ids, lengths]).T)
         header = ["IDs", "Length [U]"]
@@ -1195,8 +1195,8 @@ class TardisWidget(QWidget):
                 points=data,
                 name=name,
                 add_properties={
-                    "nearest_end_idx": dist_idx,
-                    "nearest_end_distance": distances,
+                    "Label_nearest_end_idx": dist_idx,
+                    "Score_nearest_end_distance": distances,
                 },
                 visibility=True,
                 as_filament=True,
@@ -1209,7 +1209,7 @@ class TardisWidget(QWidget):
 
         try:
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
-            ends = properties["nearest_end_distance"][first_indices]
+            ends = properties["Score_nearest_end_distance"][first_indices]
         except KeyError:
             return
 
@@ -1227,8 +1227,8 @@ class TardisWidget(QWidget):
         data, name, properties = self.get_selected_data(name=True, properties=True)
 
         ids, first_indices = np.unique(data[:, 0], return_index=True)
-        lengths = properties["nearest_end_distance"][first_indices]
-        end_idx = properties["nearest_end_idx"][first_indices]
+        lengths = properties["Score_nearest_end_distance"][first_indices]
+        end_idx = properties["Label_nearest_end_idx"][first_indices]
 
         x = pd.DataFrame(np.vstack([ids, lengths, end_idx]).T)
         header = ["IDs", "End Distance [U]", "End Index"]
@@ -1270,18 +1270,18 @@ class TardisWidget(QWidget):
 
         ends = filaments[first_indices].astype(np.float32)
 
-        properties["Branching_Distance"] = cdist(ends[:, 1:], filaments[:, 1:])
+        properties["Score_Branching_Distance"] = cdist(ends[:, 1:], filaments[:, 1:])
         for i, (f, l) in enumerate(zip(first_indices, last_indices)):
-            properties["Branching_Distance"][i, f:l] = np.nan
+            properties["Score_Branching_Distance"][i, f:l] = np.nan
 
-        child_id = np.nanargmin(properties["Branching_Distance"], axis=1)
+        child_id = np.nanargmin(properties["Score_Branching_Distance"], axis=1)
 
-        properties["Branching_Distance"] = properties["Branching_Distance"][
+        properties["Score_Branching_Distance"] = properties["Score_Branching_Distance"][
             np.arange(len(ends)), child_id
         ]
-        properties["Branching_Parent_F_ID"] = ends[:, 0]
-        properties["Branching_Child_F_ID"] = filaments[child_id, 0]
-        properties["Branching_Child_P_ID"] = child_id
+        properties["Branching_Child_F_ID"] = ends[:, 0]
+        properties["Branching_Parent_F_ID"] = filaments[child_id, 0]
+        properties["Branching_Parent_P_ID"] = child_id
 
         angles = np.zeros(len(ends[:, 0]))
         for i, interaction in enumerate(
@@ -1323,19 +1323,9 @@ class TardisWidget(QWidget):
             # Convert to degrees and ensure 0-90 range
             angle = np.degrees(np.arccos(np.abs(cos_angle)))
             angles[i] = angle
-        # B = filaments[properties["Branching_Child_F_ID"].astype(np.int32), 1:]
-        # C = properties["Branching_Child_F_ID"] + 2
-        # if np.any(C > len(filaments)):
-        #     C[C > len(filaments)] -= 4
-        # C = filaments[C.astype(np.int32), 1:]
 
-        # # A is and - B is filament - C is extension of filament
-        # BA = B - filaments[first_indices + 2, 1:]
-        # BC = (B - C)[None, ...]
-        # dot_products = np.sum(BA * BC, axis=-1)
-
-        properties["Branching_Angle"] = angles
-        b_idx = properties["Branching_Parent_F_ID"].astype(np.int32)
+        properties["Score_Branching_Angle"] = angles
+        b_idx = properties["Branching_Child_F_ID"].astype(np.int32)
         for k, v in properties.items():
             properties[k] = properties[k][b_idx]
             properties[k] = np.repeat(properties[k], point_no)
@@ -1354,8 +1344,8 @@ class TardisWidget(QWidget):
 
         try:
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
-            dist = properties["Branching_Distance"][first_indices]
-            angle = properties["Branching_Angle"][first_indices]
+            dist = properties["Score_Branching_Distance"][first_indices]
+            angle = properties["Score_Branching_Angle"][first_indices]
         except KeyError:
             return
 
@@ -1377,15 +1367,15 @@ class TardisWidget(QWidget):
         ids, first_indices = np.unique(data[:, 0], return_index=True)
         bpf_ID = properties["Branching_Parent_F_ID"][first_indices]
         bcf_ID = properties["Branching_Child_F_ID"][first_indices]
-        bcp_ID = properties["Branching_Child_P_ID"][first_indices]
-        dist = properties["Branching_Distance"][first_indices]
-        angle = properties["Branching_Angle"][first_indices]
+        bpp_ID = properties["Branching_Parent_P_ID"][first_indices]
+        dist = properties["Score_Branching_Distance"][first_indices]
+        angle = properties["Score_Branching_Angle"][first_indices]
 
-        x = pd.DataFrame(np.vstack([bpf_ID, bcf_ID, bcp_ID, dist, angle]).T)
+        x = pd.DataFrame(np.vstack([bcf_ID, bpf_ID, bpp_ID, dist, angle]).T)
         header = [
-            "Branching Parent ID",
             "Branching Child ID",
-            "Branching Child point ID",
+            "Branching Parent ID",
+            "Branching Parent point ID",
             "Branching Distance [U]",
             "Branching Angle [deg]",
         ]
@@ -1408,7 +1398,7 @@ class TardisWidget(QWidget):
         point_no = np.array(list(first_indices[1:]) + [len(data)]) - first_indices
         curvature = np.repeat(curvature, point_no)
 
-        properties = {"Curvature": curvature}
+        properties = {"Score_Curvature": curvature}
 
         create_point_layer(
             viewer=self.viewer,
@@ -1424,7 +1414,7 @@ class TardisWidget(QWidget):
 
         try:
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
-            curv = properties["Curvature"][first_indices]
+            curv = properties["Score_Curvature"][first_indices]
         except KeyError:
             return
 
@@ -1441,7 +1431,7 @@ class TardisWidget(QWidget):
         data, name, properties = self.get_selected_data(name=True, properties=True)
 
         ids, first_indices = np.unique(data[:, 0], return_index=True)
-        curv = properties["Curvature"][first_indices]
+        curv = properties["Score_Curvature"][first_indices]
 
         x = pd.DataFrame(np.vstack([ids, curv]).T)
         header = ["IDs", "Curvature"]
@@ -1455,7 +1445,7 @@ class TardisWidget(QWidget):
         point_no = np.array(list(first_indices[1:]) + [len(data)]) - first_indices
         tortuosity = np.repeat(tortuosity, point_no)
 
-        properties = {"Tortuosity": tortuosity}
+        properties = {"Score_Tortuosity": tortuosity}
 
         create_point_layer(
             viewer=self.viewer,
@@ -1471,7 +1461,7 @@ class TardisWidget(QWidget):
 
         try:
             unique_ids, first_indices = np.unique(data[:, 0], return_index=True)
-            tortuosity = properties["Tortuosity"][first_indices]
+            tortuosity = properties["Score_Tortuosity"][first_indices]
         except KeyError:
             return
 
@@ -1488,7 +1478,7 @@ class TardisWidget(QWidget):
         data, name, properties = self.get_selected_data(name=True, properties=True)
 
         ids, first_indices = np.unique(data[:, 0], return_index=True)
-        tort = properties["Tortuosity"][first_indices]
+        tort = properties["Score_Tortuosity"][first_indices]
 
         x = pd.DataFrame(np.vstack([ids, tort]).T)
         header = ["IDs", "Tortuosity"]
@@ -1652,7 +1642,7 @@ class PlotPopup(QDialog):
             try:
                 bins = int(bins_)
             except ValueError:
-                bins = np.histogram_bin_edges(y, bins=bins_)
+                bins = np.histogram_bin_edges(values, bins=bins_)
 
             ax = self.figure.add_subplot(len(y), 1, idx + 1)
             ax.hist(values, bins=bins, density=True, color="skyblue", edgecolor="black")
@@ -1700,26 +1690,3 @@ def show_coordinate_dialog():
             return np.array([[0, x, y, z]])
         except ValueError:
             show_info("Invalid input: Please enter valid numbers for coordinates.")
-
-
-def group_indices_by_value(data):
-    # Initialize output lists
-    new_names = []
-    new_indices = []
-
-    # Process each array and its corresponding name
-    for name, arr in zip(data[0], data[1]):
-        # Get unique values
-        unique_vals = np.unique(arr)
-        # For each unique value, find all indices where it appears
-        for val in unique_vals:
-            # Create name with the value as suffix
-            new_names.append(f"{name}_{int(val)}")
-            # Find indices where this value appears
-            indices = np.where(arr == val)[0]
-            new_indices.append(indices)
-
-    # Create the output list
-    output = [new_names, new_indices]
-
-    return output
