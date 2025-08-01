@@ -275,6 +275,19 @@ class TardisWidget(QWidget):
         self.filter_to_selected_obj = QPushButton("Filament")
         # self.filter_to_selected_obj.clicked.connect(self.filter_to_selected_obj_)
 
+        self.cut_sphere_box = QHBoxLayout()
+        self.cut_sphere_bt = QPushButton("Cut")
+        self.cut_sphere_bt.clicked.connect(
+            self.cut_sphere
+        )
+        self.cut_sphere_min = QLineEdit("0.0")
+        self.cut_sphere_min.setMaximumWidth(40)
+        self.cut_sphere_max = QLineEdit("0.0")
+        self.cut_sphere_max.setMaximumWidth(40)
+        self.cut_sphere_box.addWidget(self.cut_sphere_bt)
+        self.cut_sphere_box.addWidget(self.cut_sphere_min)
+        self.cut_sphere_box.addWidget(self.cut_sphere_max)
+
         self.filter_to_selected_point_box = QHBoxLayout()
         self.filter_to_selected_point_box.addWidget(self.filter_to_selected_point_dist)
         self.filter_to_selected_point_box.addWidget(
@@ -285,7 +298,7 @@ class TardisWidget(QWidget):
         """
         Analysis
         """
-        # Lenght
+        # Length
         self.length_compute = QPushButton("Compute")
         self.length_compute.clicked.connect(self.calc_length)
         self.length_plot = QPushButton("Plot")
@@ -393,6 +406,7 @@ class TardisWidget(QWidget):
         filter_layout.addRow("By Tort.", self.filter_tort_box)
         filter_layout.addRow("Last selected", self.last_selected_obj)
         filter_layout.addRow("Dist. to obj.", self.filter_to_selected_point_box)
+        filter_layout.addRow("Cut Sphere", self.cut_sphere_box)
         filter_layout.addRow("End Inter. dist.", self.filter_end_inter_dist_box)
         filter_layout.addRow("End Inter. angle", self.filter_end_inter_angle_box)
         filter_box.setContentLayout(filter_layout)
@@ -738,6 +752,42 @@ class TardisWidget(QWidget):
             as_filament=True,
             color_="viridis",
         )
+
+    def cut_sphere(self):
+        try:
+            data, name, properties = self.get_selected_data(name=True, properties=True)
+        except:
+            return
+
+        layers = [layer.name for layer in self.viewer.layers]
+        last_obj = self.last_selected_obj.text().split(";")
+        dist_th_min = float(self.cut_sphere_min.text())
+        dist_th_max = float(self.cut_sphere_max.text())
+
+        if dist_th_max == 0.0:
+            return
+
+        layer = [n for n in layers if n.startswith(last_obj[0])]
+        if len(layer) != 0:
+            filter_to = self.get_data_by_name(layer[0])[int(float(last_obj[1]))][1:]
+
+            distances = np.linalg.norm(data[:, 1:] - filter_to, axis=1)
+            mask = np.logical_and(dist_th_min <= distances, distances <= dist_th_max)
+            data = data[mask]
+            for k, v in properties.items():
+                properties[k] = v[mask]
+
+            create_point_layer(
+                viewer=self.viewer,
+                points=data,
+                name=name + "_cut_sphere",
+                add_properties=properties,
+                visibility=True,
+                as_filament=True,
+                select_layer=name,
+            )
+        else:
+            return
 
     def filter_value_changed(self):
         sender = self.sender()
@@ -1639,6 +1689,8 @@ class PlotPopup(QDialog):
 
         self.figure.clear()
         for idx, values in enumerate(y):
+            values = [x for x in values if not np.isnan(x)]
+
             try:
                 bins = int(bins_)
             except ValueError:
