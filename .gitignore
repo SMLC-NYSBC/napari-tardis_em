@@ -11,3 +11,4 @@ src/napari_tardis_em.egg-info/dependency_links.txt
 *.iml
 .idea/
 /dist
+/build
