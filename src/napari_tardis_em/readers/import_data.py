@@ -5,8 +5,9 @@
 #  Simons Machine Learning Center                                     #
 #                                                                     #
 #  Robert Kiewisz, Tristan Bepler                                     #
-#  MIT License 2024                                                   #
+#  MIT License 2021 - 2025                                            #
 #######################################################################
+
 from os.path import splitext, basename
 
 from tardis_em.utils.load_data import ImportDataFromAmira

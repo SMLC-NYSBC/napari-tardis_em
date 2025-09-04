@@ -1,3 +1,13 @@
+#######################################################################
+#  TARDIS - Transformer And Rapid Dimensionless Instance Segmentation #
+#                                                                     #
+#  New York Structural Biology Center                                 #
+#  Simons Machine Learning Center                                     #
+#                                                                     #
+#  Robert Kiewisz, Tristan Bepler                                     #
+#  MIT License 2021 - 2025                                            #
+#######################################################################
+
 from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtGui import QPalette, QStandardItem, QFontMetrics
 from PyQt5.QtWidgets import QComboBox, QStyledItemDelegate, qApp
