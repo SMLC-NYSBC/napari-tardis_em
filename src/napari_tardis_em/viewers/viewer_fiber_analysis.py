@@ -277,9 +277,7 @@ class TardisWidget(QWidget):
 
         self.cut_sphere_box = QHBoxLayout()
         self.cut_sphere_bt = QPushButton("Cut")
-        self.cut_sphere_bt.clicked.connect(
-            self.cut_sphere
-        )
+        self.cut_sphere_bt.clicked.connect(self.cut_sphere)
         self.cut_sphere_min = QLineEdit("0.0")
         self.cut_sphere_min.setMaximumWidth(40)
         self.cut_sphere_max = QLineEdit("0.0")
@@ -570,9 +568,14 @@ class TardisWidget(QWidget):
 
         if f_dir.endswith(".csv"):
             data = pd.DataFrame(data)
-            header = ['ID', 'X', 'Y', 'Z'] + [k if k.startswith(["Label_", "Score_", "Score_P_"]) else k[6:] for k in properties.keys()]
+            header = ["ID", "X", "Y", "Z"] + [
+                k if k.startswith(["Label_", "Score_", "Score_P_"]) else k[6:]
+                for k in properties.keys()
+            ]
 
-            data = pd.concat([data, pd.DataFrame(np.array(list(properties.values())).T)], axis=1)
+            data = pd.concat(
+                [data, pd.DataFrame(np.array(list(properties.values())).T)], axis=1
+            )
             self._save_csv(data, header, f_dir=f_dir)
         elif f_dir.endswith(".am"):
             ids, first_indices = np.unique(data[:, 0], return_index=True)
@@ -580,22 +583,30 @@ class TardisWidget(QWidget):
             properties_idx = {
                 k: v[first_indices] for k, v in properties.items() if k != "track_id"
             }
-            properties = {
-                k: v for k, v in properties.items() if k != "track_id"
-            }
+            properties = {k: v for k, v in properties.items() if k != "track_id"}
 
             if any(key.startswith("Label_") for key in properties_idx):
-                labels = {k[6:]: np.where(v-1)[0] for k, v in properties_idx.items() if k.startswith("Label_")}
+                labels = {
+                    k[6:]: np.where(v - 1)[0]
+                    for k, v in properties_idx.items()
+                    if k.startswith("Label_")
+                }
             else:
                 labels = None
 
             if any(key.startswith("Score_") for key in properties_idx):
-                scores_segments = {k[6:]: v for k, v in properties_idx.items() if k.startswith("Score_")}
+                scores_segments = {
+                    k[6:]: v
+                    for k, v in properties_idx.items()
+                    if k.startswith("Score_")
+                }
             else:
                 scores_segments = None
 
             if any(key.startswith("Score_P_") for key in properties):
-                scores_points = {k[8:]: v for k, v in properties.items() if k.startswith("Score_P_")}
+                scores_points = {
+                    k[8:]: v for k, v in properties.items() if k.startswith("Score_P_")
+                }
             else:
                 scores_points = None
 
@@ -653,6 +664,9 @@ class TardisWidget(QWidget):
         name = "Centers"
         xyz = show_coordinate_dialog()  # [:, [0, 3, 2, 1]]
 
+        if xyz is None:
+            return
+
         try:
             data = self.viewer.layers[name].data
             data = np.array(
@@ -669,10 +683,10 @@ class TardisWidget(QWidget):
             ids = 0
 
         if xyz.shape == (1, 4):
-            print(f'Data: {data} \n xyz: {xyz}')
+            print(f"Data: {data} \n xyz: {xyz}")
             data = np.vstack([data, xyz])
             data[-1, 0] = ids
-            print(f'Stitched: {data}')
+            print(f"Stitched: {data}")
 
         create_point_layer(
             viewer=self.viewer,
@@ -776,6 +790,10 @@ class TardisWidget(QWidget):
             data = data[mask]
             for k, v in properties.items():
                 properties[k] = v[mask]
+
+            unique_id, count = np.unique(data[:, 0], return_counts=True)
+            valid_id = unique_id[count > 1]
+            data = data[np.isin(data[:, 0], valid_id)]
 
             create_point_layer(
                 viewer=self.viewer,

@@ -13,7 +13,7 @@ from os.path import join, splitext, isdir, isfile
 
 import numpy as np
 import pandas as pd
-from PyQt5.QtGui import QDoubleValidator
+from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtWidgets import (
     QPushButton,
     QFormLayout,
@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QLineEdit,
     QCheckBox,
+    QHBoxLayout,
 )
 from napari import Viewer
 from napari.utils.notifications import show_info
@@ -58,13 +59,11 @@ class TardisWidget(QWidget):
      results from validation loop.
 
     ToDo:
-        Co-localization for movies and frames
-            - data mean but also per pixel on the MT length
-            - for all microtubules
-            - statistic? which mT are not correlated
+        # - ID is being lost after switching
+        # - Try using MTs channels to get predictions select analyse channel and invert contrast on it
+        - correlation on absolute values not normalized
 
-    ToDo:
-        Try using MTs chanells to get predictions
+
     """
 
     def __init__(self, viewer_mt_tirf: Viewer):
@@ -97,8 +96,22 @@ class TardisWidget(QWidget):
         self.directory.clicked.connect(self.load_directory)
         self.dir = getcwd()
 
-        self.no_instances = QCheckBox()
-        self.no_instances.setCheckState(2)
+        self.analyse_on_channel_box = QHBoxLayout()
+        self.analyse_on_channel_bt = QCheckBox()
+        self.analyse_on_channel_bt.setCheckState(0)
+
+        self.analyse_on_channel = QDoubleSpinBox()
+        self.analyse_on_channel.setDecimals(0)
+        self.analyse_on_channel.setMinimum(0)
+        self.analyse_on_channel.setMaximum(10)
+        self.analyse_on_channel.setSingleStep(1)
+        self.analyse_on_channel.setValue(0)
+
+        self.analyse_on_channel_box.addWidget(self.analyse_on_channel_bt)
+        self.analyse_on_channel_box.addWidget(self.analyse_on_channel)
+
+        self.normalize_image = QCheckBox()
+        self.normalize_image.setCheckState(0)
 
         self.select_data_view = QComboBox()
         self.select_data_view.addItems(
@@ -119,6 +132,7 @@ class TardisWidget(QWidget):
         self.stabilize_button.setMinimumWidth(225)
         self.stabilize_button.clicked.connect(self.stabilize_movie)
 
+        self.thickness_bt_box = QHBoxLayout()
         self.thickness_bt1 = QComboBox()
         self.thickness_bt1.addItems(["1", "3", "5", "7", "9"])
         self.thickness_bt1.setCurrentIndex(1)
@@ -126,6 +140,8 @@ class TardisWidget(QWidget):
         self.thickness_bt2 = QComboBox()
         self.thickness_bt2.addItems(["1", "3", "5", "7", "9"])
         self.thickness_bt2.setCurrentIndex(1)
+        self.thickness_bt_box.addWidget(self.thickness_bt1)
+        self.thickness_bt_box.addWidget(self.thickness_bt2)
 
         ##############################
         # Setting user should change #
@@ -133,6 +149,7 @@ class TardisWidget(QWidget):
         label_2 = QLabel("                                      ")
         label_2.setStyleSheet(border_style("green"))
 
+        self.model_thresh_box = QHBoxLayout()
         self.cnn_threshold = QDoubleSpinBox()
         self.cnn_threshold.setDecimals(2)
         self.cnn_threshold.setMinimum(0)
@@ -161,6 +178,8 @@ class TardisWidget(QWidget):
             "false/positives. Higher value will result in cleaner output but may \n"
             "reduce recall."
         )
+        self.model_thresh_box.addWidget(self.cnn_threshold)
+        self.model_thresh_box.addWidget(self.dist_threshold)
 
         self.device = QComboBox()
         self.device.addItems(get_list_of_device())
@@ -176,16 +195,15 @@ class TardisWidget(QWidget):
         label_run.setStyleSheet(border_style("blue"))
 
         self.predict_1_button = QPushButton("Predict with workflow...")
-        self.predict_1_button.setMinimumWidth(225)
         self.predict_1_button.clicked.connect(self.predict_workflow)
 
-        self.predict_2_button = QPushButton("Analyse frames...")
-        self.predict_2_button.setMinimumWidth(225)
+        self.predict_2_box = QHBoxLayout()
+        self.predict_2_button = QPushButton("frames...")
         self.predict_2_button.clicked.connect(self.re_analise_data)
-
-        self.predict_3_button = QPushButton("Analyse movies...")
-        self.predict_3_button.setMinimumWidth(225)
+        self.predict_3_button = QPushButton("Movies...")
         self.predict_3_button.clicked.connect(self.re_analise_data_movies)
+        self.predict_2_box.addWidget(self.predict_2_button)
+        self.predict_2_box.addWidget(self.predict_3_button)
 
         self.analysis_list = CheckableComboBox()
         self.analysis_list.addItems(
@@ -202,25 +220,24 @@ class TardisWidget(QWidget):
         )
 
         self.add_new_filament_bt = QPushButton("Add new filament")
-        self.add_new_filament_bt.setMinimumWidth(225)
         self.add_new_filament_bt.clicked.connect(self.add_new_filament)
 
         self.nd2_file_frame_bt = QComboBox()
         self.nd2_file_frame_bt.currentTextChanged.connect(self.nd2_file_frame_change)
 
-        self.edite_mode_bt_1 = QPushButton("Selected layer to points")
-        self.edite_mode_bt_1.setMinimumWidth(225)
+        self.edit_mode_box = QHBoxLayout()
+        self.edite_mode_bt_1 = QPushButton("As points")
         self.edite_mode_bt_1.clicked.connect(self.point_layer)
 
-        self.edite_mode_bt_2 = QPushButton("Selected layer to filament")
-        self.edite_mode_bt_2.setMinimumWidth(225)
+        self.edite_mode_bt_2 = QPushButton("As filament")
         self.edite_mode_bt_2.clicked.connect(self.track_layer)
+        self.edit_mode_box.addWidget(self.edite_mode_bt_1)
+        self.edit_mode_box.addWidget(self.edite_mode_bt_2)
 
         self.filament_id_rm = QLineEdit("None")
         self.filament_id_rm.setValidator(QDoubleValidator(0, 10000, 1))
         self.filament_id_rm.setToolTip("Select filament ID to remove")
         self.remove_filament_bt = QPushButton("Remove filament")
-        self.remove_filament_bt.setMinimumWidth(225)
         self.remove_filament_bt.clicked.connect(self.remove_filament)
 
         self.join_filaments_id_1 = QLineEdit("None")
@@ -230,12 +247,13 @@ class TardisWidget(QWidget):
         self.join_filaments_id_2.setValidator(QDoubleValidator(0, 10000, 1))
         self.join_filaments_id_2.setToolTip("Select 2nd filament ID to join")
 
+        self.join_filaments_box = QHBoxLayout()
         self.join_filaments_bt = QPushButton("Join filament")
-        self.join_filaments_bt.setMinimumWidth(225)
         self.join_filaments_bt.clicked.connect(self.join_filaments)
         self.join_selected_filaments_bt = QPushButton("Join Selected")
-        self.join_selected_filaments_bt.setMinimumWidth(225)
         self.join_selected_filaments_bt.clicked.connect(self.join_selected_filaments)
+        self.join_filaments_box.addWidget(self.join_filaments_bt)
+        self.join_filaments_box.addWidget(self.join_selected_filaments_bt)
 
         self.save_edited_instances_bt = QPushButton("Save selected instance file")
         self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
@@ -255,31 +273,30 @@ class TardisWidget(QWidget):
         """
         layout = QFormLayout()
         layout.addRow("Select Directory", self.directory)
-        layout.addRow("Show Instances if possible", self.no_instances)
+        layout.addRow("Analyse on analysis channel", self.analyse_on_channel_box)
         layout.addRow("Select Image", self.select_data_view)
 
         layout.addRow("Analysis Channel", self.analysis_ch)
+        layout.addRow("Normalize image", self.normalize_image)
         layout.addRow("", self.stabilize_button)
 
         layout.addRow("---- Workflow ----", label_2)
-        layout.addRow("Pixel size", self.pixel_size_bt)
-        layout.addRow("CNN threshold", self.cnn_threshold)
-        layout.addRow("DIST threshold", self.dist_threshold)
+        layout.addRow("Pixel size [nm]", self.pixel_size_bt)
+        layout.addRow("CNN/DIST threshold", self.model_thresh_box)
         layout.addRow("Device", self.device)
 
         layout.addRow("---- Run Prediction -----", label_run)
-        layout.addRow("Line Thickness Image", self.thickness_bt1)
-        layout.addRow("Line Thickness Mask", self.thickness_bt2)
-        layout.addRow("", self.predict_1_button)
-        layout.addRow("", self.predict_2_button)
-        layout.addRow("", self.predict_3_button)
+        layout.addRow("Line Thickness Image/Mask", self.thickness_bt_box)
+        layout.addRow("Predict", self.predict_1_button)
+        layout.addRow("Analyse", self.predict_2_box)
         layout.addRow("", self.analysis_list)
 
-        layout.addRow("---- Correct-filaments ----", label_2)
+        layout.addRow("---- View-filaments ----", label_2)
         layout.addRow("Select nd2 frame", self.nd2_file_frame_bt)
         # Trigger addition mode with a new ID
-        layout.addRow("", self.edite_mode_bt_1)
-        layout.addRow("", self.edite_mode_bt_2)
+        layout.addRow("View layer", self.edit_mode_box)
+
+        layout.addRow("---- Correct-filaments ----", label_2)
         layout.addRow("Add Filament", self.add_new_filament_bt)
         # Remove filament with self.current_filament_id updated in self.filament_id
         layout.addRow("Remove Filament ID", self.filament_id_rm)
@@ -289,8 +306,7 @@ class TardisWidget(QWidget):
         # needs to press "J" again point at the second filament
         layout.addRow("Join Filaments ID 1", self.join_filaments_id_1)
         layout.addRow("Join Filaments ID 2", self.join_filaments_id_2)
-        layout.addRow("Join Filaments", self.join_filaments_bt)
-        layout.addRow("", self.join_selected_filaments_bt)
+        layout.addRow("Join", self.join_filaments_box)
 
         layout.addRow("", label_2)
         layout.addRow("Save", self.save_edited_instances_bt)
@@ -353,13 +369,21 @@ class TardisWidget(QWidget):
             import tifffile.tifffile as save_tiff
             from tardis_em.utils.load_data import load_nd2_file
 
+            id_ = int(self.analyse_on_channel.text())
             for i in self.nd2_list:
                 image, _ = load_nd2_file(join(self.dir, i))
 
                 for j in range(image.shape[1]):
                     name_file = join(self.dir, i[:-4]) + f"_{j}.tiff"
 
-                    save_tiff.imwrite(name_file, image[0, j, 0, ...])
+                    if self.analyse_on_channel_bt.checkState() == 2:
+                        if id_ != 0:  # Invert contrast on fluo images
+                            img = image[id_, j, 0, ...]
+                            img = np.max(img) - img
+
+                        save_tiff.imwrite(name_file, img)
+                    else:
+                        save_tiff.imwrite(name_file, image[0, j, 0, ...])
 
         image_list = listdir(self.dir)
 
@@ -437,10 +461,6 @@ class TardisWidget(QWidget):
 
         if is_instance_filter:
             is_instance = False
-
-        if self.no_instances.checkState() != 2:
-            is_instance = False
-            is_instance_filter = False
 
         if is_mask_tif:
             if self.nd2_list is None:
@@ -552,7 +572,7 @@ class TardisWidget(QWidget):
                 transparency=True,
             )
 
-        if instance is not None and self.no_instances:
+        if instance is not None:
             create_point_layer(
                 self.viewer,
                 points=instance,
@@ -616,9 +636,12 @@ class TardisWidget(QWidget):
             data=[data],
             names_l=[splitext(name_)[0] + f"_{frame_}"],
             path=join(self.dir, "Predictions", "Analysis"),
-            images=[img[dim_, frame_, ...]] if img is not None else None,
-            image_corr=img[:, frame_, 0, ...],
+            images=(
+                [img[dim_, frame_, ...]] if img is not None else None
+            ),  # selected channel and image to analyse
+            image_corr=img[:, frame_, 0, ...],  # select current image
             frame_id=dim_,
+            normalize_image=True if self.normalize_image.checkState() == 2 else False,
             px=pixel_size,
             thicknesses=[
                 int(self.thickness_bt1.currentText()),
@@ -626,11 +649,6 @@ class TardisWidget(QWidget):
             ],
             anal_list=analysis_list,
         )
-
-        # # Co-localization
-        # if "colocalize" in analysis_list:
-        #     if img.shape[0] > 2:
-        #         pass
 
     def re_analise_data_movies(self):
         name_ = self.select_data_view.currentText()
@@ -680,19 +698,6 @@ class TardisWidget(QWidget):
                 int(self.thickness_bt2.currentText()),
             ],
         )
-        # # Co-localization
-        # if "colocalize" in analysis_list:
-        #     """
-        #     - Get all channels, and dim_ as a changel to which we colocalizing
-        #     - get thicness from bt1 and bt2 as the bigger one
-        #     - For each frame_
-        #         - for each MT
-        #             - For each Time point
-        #                 - extract MT track on all channels
-        #                 - Compute co-localized signal between all channels
-        #                 - append resoults
-        #     """
-        #     pass
 
     def nd2_file_frame(self):
         self.nd2_update = True
