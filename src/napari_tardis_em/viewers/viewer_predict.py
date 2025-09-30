@@ -35,6 +35,7 @@ from napari_tardis_em.viewers.utils import (
     create_image_layer,
     update_viewer_prediction,
     calculate_position,
+    convert_to_float,
 )
 from napari_tardis_em.viewers.viewer_utils import (
     _update_cnn_threshold,
@@ -343,7 +344,10 @@ class TardisWidget(QWidget):
     def update_cnn_threshold(self):
         if self.img is not None:
             self.img_threshold = _update_cnn_threshold(
-                self.viewer, self.dir, self.img, float(self.cnn_threshold.text())
+                self.viewer,
+                self.dir,
+                self.img,
+                convert_to_float(self.cnn_threshold.text()),
             )
 
             self.predictor.image = self.img_threshold
@@ -434,8 +438,8 @@ class TardisWidget(QWidget):
                 {
                     "correct_px": self.correct_px.text(),
                     "normalize_px": self.normalize_px.text(),
-                    "cnn_threshold": float(self.cnn_threshold.text()),
-                    "dist_threshold": float(self.dist_threshold.text()),
+                    "cnn_threshold": convert_to_float(self.cnn_threshold.text()),
+                    "dist_threshold": convert_to_float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
                     "predict_type": self.predict_type,
                     "mask": bool(self.mask.checkState()),
@@ -579,14 +583,14 @@ class TardisWidget(QWidget):
         px = (
             ""
             if self.correct_px.text() == "None"
-            else f"-px {float(self.correct_px.text())} "
+            else f"-px {convert_to_float(self.correct_px.text())} "
         )
 
         if self.px is not None:
             px = (
                 ""
-                if self.px == float(self.correct_px.text())
-                else f"-px {float(self.correct_px.text())} "
+                if self.px == convert_to_float(self.correct_px.text())
+                else f"-px {convert_to_float(self.correct_px.text())} "
             )
 
         ch = (

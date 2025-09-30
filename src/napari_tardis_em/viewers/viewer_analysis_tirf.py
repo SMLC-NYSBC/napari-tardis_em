@@ -10,7 +10,7 @@
 
 import os
 from os import getcwd, listdir, mkdir
-from os.path import join, splitext, isdir, isfile
+from os.path import join, splitext, isdir, isfile, dirname
 
 import numpy as np
 import pandas as pd
@@ -39,8 +39,8 @@ from napari_tardis_em.viewers.utils import (
     convert_to_float,
     frames_phase_correlation,
 )
-from tardis_em.analysis.analysis import analyse_filaments_list
-from tardis_em.analysis.filament_utils import (
+from tardis_em_analysis.analysis import analyse_filaments_list
+from tardis_em_analysis.filament_utils import (
     reorder_segments_id,
     sort_segment,
     sort_by_length,
@@ -58,13 +58,6 @@ class TardisWidget(QWidget):
     Plugin integrate TARDIS-em and allow to easily set up training. To make it more
     user-friendly, this plugin guid user what to do, and during training display
      results from validation loop.
-
-    ToDo:
-        # - ID is being lost after switching
-        # - Try using MTs channels to get predictions select analyse channel and invert contrast on it
-        - correlation on absolute values not normalized
-
-
     """
 
     def __init__(self, viewer_mt_tirf: Viewer):
@@ -97,19 +90,12 @@ class TardisWidget(QWidget):
         self.directory.clicked.connect(self.load_directory)
         self.dir = getcwd()
 
-        self.analyse_on_channel_box = QHBoxLayout()
-        self.analyse_on_channel_bt = QCheckBox()
-        self.analyse_on_channel_bt.setCheckState(0)
-
         self.analyse_on_channel = QDoubleSpinBox()
         self.analyse_on_channel.setDecimals(0)
         self.analyse_on_channel.setMinimum(0)
         self.analyse_on_channel.setMaximum(10)
         self.analyse_on_channel.setSingleStep(1)
         self.analyse_on_channel.setValue(0)
-
-        self.analyse_on_channel_box.addWidget(self.analyse_on_channel_bt)
-        self.analyse_on_channel_box.addWidget(self.analyse_on_channel)
 
         self.normalize_image = QCheckBox()
         self.normalize_image.setCheckState(0)
@@ -130,7 +116,6 @@ class TardisWidget(QWidget):
         )
 
         self.stabilize_button = QPushButton("Stabilize movie")
-        self.stabilize_button.setMinimumWidth(225)
         self.stabilize_button.clicked.connect(self.stabilize_movie)
 
         self.thickness_bt_box = QHBoxLayout()
@@ -166,6 +151,7 @@ class TardisWidget(QWidget):
             "If selected 0.0 - Output probability mask \n"
             "If selected 1.0 - Use adaptive threshold."
         )
+        self.cnn_threshold.setMaximumWidth(25)
 
         self.dist_threshold = QDoubleSpinBox()
         self.dist_threshold.setDecimals(2)
@@ -179,6 +165,7 @@ class TardisWidget(QWidget):
             "false/positives. Higher value will result in cleaner output but may \n"
             "reduce recall."
         )
+        self.dist_threshold.setMaximumWidth(25)
         self.model_thresh_box.addWidget(self.cnn_threshold)
         self.model_thresh_box.addWidget(self.dist_threshold)
 
@@ -195,14 +182,17 @@ class TardisWidget(QWidget):
         label_run = QLabel("Start Prediction                 ")
         label_run.setStyleSheet(border_style("blue"))
 
-        self.predict_1_button = QPushButton("Predict with workflow...")
-        self.predict_1_button.clicked.connect(self.predict_workflow)
+        self.predict_0_button = QPushButton("Predict with workflow...")
+        self.predict_0_button.clicked.connect(self.predict_workflow)
 
         self.predict_2_box = QHBoxLayout()
-        self.predict_2_button = QPushButton("frames...")
+        self.predict_1_button = QPushButton("Batch F.")
+        self.predict_1_button.clicked.connect(self.re_analise_data_batch)
+        self.predict_2_button = QPushButton("Single F.")
         self.predict_2_button.clicked.connect(self.re_analise_data)
-        self.predict_3_button = QPushButton("Movies...")
+        self.predict_3_button = QPushButton("Movie")
         self.predict_3_button.clicked.connect(self.re_analise_data_movies)
+        self.predict_2_box.addWidget(self.predict_1_button)
         self.predict_2_box.addWidget(self.predict_2_button)
         self.predict_2_box.addWidget(self.predict_3_button)
 
@@ -256,8 +246,13 @@ class TardisWidget(QWidget):
         self.join_filaments_box.addWidget(self.join_filaments_bt)
         self.join_filaments_box.addWidget(self.join_selected_filaments_bt)
 
-        self.save_edited_instances_bt = QPushButton("Save selected instance file")
+        self.save_box = QHBoxLayout()
+        self.save_edited_instances_bt = QPushButton("Save csv")
         self.save_edited_instances_bt.clicked.connect(self.save_edited_instances)
+        self.save_roi_instances_bt = QPushButton("Save ROI")
+        self.save_roi_instances_bt.clicked.connect(self.save_roi)
+        self.save_box.addWidget(self.save_edited_instances_bt)
+        self.save_box.addWidget(self.save_roi_instances_bt)
 
         """
         Key Binding
@@ -274,7 +269,7 @@ class TardisWidget(QWidget):
         """
         layout = QFormLayout()
         layout.addRow("Select Directory", self.directory)
-        layout.addRow("Analyse on analysis channel", self.analyse_on_channel_box)
+        layout.addRow("Segment on channel", self.analyse_on_channel)
         layout.addRow("Select Image", self.select_data_view)
 
         layout.addRow("Analysis Channel", self.analysis_ch)
@@ -288,7 +283,7 @@ class TardisWidget(QWidget):
 
         layout.addRow("---- Run Prediction -----", label_run)
         layout.addRow("Line Thickness Image/Mask", self.thickness_bt_box)
-        layout.addRow("Predict", self.predict_1_button)
+        layout.addRow("Predict", self.predict_0_button)
         layout.addRow("Analyse", self.predict_2_box)
         layout.addRow("", self.analysis_list)
 
@@ -342,12 +337,13 @@ class TardisWidget(QWidget):
     def load_directory(self):
         filename = QFileDialog.getExistingDirectory(
             caption="Open Files",
-            directory=getcwd(),
+            directory=self.out_,
             # filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
         )
 
         self.directory.setText(filename[-30:])
         self.dir = filename
+        self.out_ = dirname(self.dir)
 
         self.img = None
         self.load_data()
@@ -377,14 +373,11 @@ class TardisWidget(QWidget):
                 for j in range(image.shape[1]):
                     name_file = join(self.dir, i[:-4]) + f"_{j}.tiff"
 
-                    if self.analyse_on_channel_bt.checkState() == 2:
-                        if id_ != 0:  # Invert contrast on fluo images
-                            img = image[id_, j, 0, ...]
-                            img = np.max(img) - img
+                    img = image[id_, j, 0, ...]
+                    if id_ != 0:  # Invert contrast on fluo images
+                        img = np.max(img) - img
 
-                        save_tiff.imwrite(name_file, img)
-                    else:
-                        save_tiff.imwrite(name_file, image[0, j, 0, ...])
+                    save_tiff.imwrite(name_file, img)
 
         image_list = listdir(self.dir)
 
@@ -611,6 +604,70 @@ class TardisWidget(QWidget):
 
         predictor()
         self.view_selected_data()
+
+    def re_analise_data_batch(self):
+        name_ = self.select_data_view.currentText()
+        data = self.get_selected_data()
+        data = sort_segments(data)
+        data = sort_by_length(reorder_segments_id(data))
+
+        dim_ = int(self.analysis_ch.currentText())
+        analysis_list = self.analysis_list.currentData()
+
+        img = None
+        if name_.endswith(".nd2"):
+            img = self.viewer.layers[splitext(name_)[0]].data
+
+        pixel_size = convert_to_float(self.pixel_size_bt.text())
+        if pixel_size == 1.0:
+            pixel_size = None
+        else:
+            pixel_size = [pixel_size]
+
+        for frame_ in range(img.shape[1]):
+            analyse_filaments_list(
+                data=[data],
+                names_l=[splitext(name_)[0] + f"_{frame_}"],
+                path=join(self.dir, "Predictions", "Analysis"),
+                images=(
+                    [img[dim_, frame_, ...]] if img is not None else None
+                ),  # selected channel and image to analyse
+                image_corr=img[:, frame_, 0, ...],  # select current image
+                frame_id=dim_,
+                normalize_image=(
+                    True if self.normalize_image.checkState() == 2 else False
+                ),
+                px=pixel_size,
+                thicknesses=[
+                    int(self.thickness_bt1.currentText()),
+                    int(self.thickness_bt2.currentText()),
+                ],
+                anal_list=analysis_list,
+            )
+
+            csv_path = join(
+                self.dir, "Predictions", "Analysis", splitext(name_)[0] + f"_{frame_}"
+            )
+            if frame_ == 0:
+                master_df = pd.read_csv(csv_path, sep=",", header=0)
+            else:
+                new_df = pd.read_csv(csv_path)
+                master_df = pd.concat([master_df, new_df], ignore_index=True)
+
+            os.remove(csv_path)
+        master_df.to_csv(
+            join(
+                self.dir,
+                "Predictions",
+                "Analysis",
+                splitext(name_)[0] + f"_analyse_dim_{dim_}.csv",
+            ),
+            header=True,
+            index=False,
+            sep=",",
+        )
+
+        # Stitch results and remove .temps
 
     def re_analise_data(self):
         name_ = self.select_data_view.currentText()
@@ -955,6 +1012,23 @@ class TardisWidget(QWidget):
             index=False,
             sep=",",
         )
+
+    def save_roi(self):
+        data = self.get_selected_data()
+
+        name_ = splitext(self.select_data_view.currentText())[0]
+        f_name = name_ + f"_{self.nd2_current_frame}" + "_instances_filter"
+
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        filename, f_format = QFileDialog.getSaveFileName(
+            caption="Save Files",
+            directory=join(getcwd(), f_name),
+            filter="Zip File (*.zip)",
+            options=options,
+        )
+        filename = os.path.splitext(filename)[0]
+        filename = filename + ".zip"
 
     def resample(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)

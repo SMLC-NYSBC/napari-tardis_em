@@ -35,6 +35,7 @@ from napari_tardis_em.viewers.utils import (
     update_viewer_prediction,
     calculate_position,
     _update_checkpoint_dir,
+    convert_to_float,
 )
 from napari_tardis_em.viewers.viewer_utils import (
     _update_cnn_threshold,
@@ -364,7 +365,10 @@ class TardisWidget(QWidget):
     def update_cnn_threshold(self):
         if self.img is not None:
             self.img_threshold = _update_cnn_threshold(
-                self.viewer, self.dir, self.img, float(self.cnn_threshold.text())
+                self.viewer,
+                self.dir,
+                self.img,
+                convert_to_float(self.cnn_threshold.text()),
             )
 
             self.predictor.image = self.img_threshold
@@ -439,8 +443,8 @@ class TardisWidget(QWidget):
                 {
                     "correct_px": self.correct_px.text(),
                     "normalize_px": self.normalize_px.text(),
-                    "cnn_threshold": float(self.cnn_threshold.text()),
-                    "dist_threshold": float(self.dist_threshold.text()),
+                    "cnn_threshold": convert_to_float(self.cnn_threshold.text()),
+                    "dist_threshold": convert_to_float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
                     "predict_type": "Microtubule",
                     "mask": bool(self.mask.checkState()),
@@ -461,7 +465,7 @@ class TardisWidget(QWidget):
                     "connect_splines": int(self.connect_splines.text()),
                     "connect_cylinder": int(self.connect_cylinder.text()),
                     "amira_compare_distance": int(self.amira_compare_distance.text()),
-                    "amira_inter_probability": float(
+                    "amira_inter_probability": convert_to_float(
                         self.amira_inter_probability.text()
                     ),
                     "device": self.device.currentText(),
@@ -578,13 +582,13 @@ class TardisWidget(QWidget):
         px = (
             ""
             if self.correct_px.text() == "None"
-            else f"-px {float(self.correct_px.text())} "
+            else f"-px {convert_to_float(self.correct_px.text())} "
         )
         if self.px is not None:
             px = (
                 ""
-                if self.px == float(self.correct_px.text())
-                else f"-px {float(self.correct_px.text())} "
+                if self.px == convert_to_float(self.correct_px.text())
+                else f"-px {convert_to_float(self.correct_px.text())} "
             )
 
         ch = (
@@ -609,12 +613,12 @@ class TardisWidget(QWidget):
 
         ct = (
             "-ct auto "
-            if float(self.cnn_threshold.text()) == 1.0
+            if convert_to_float(self.cnn_threshold.text()) == 1.0
             else f"-ct {self.cnn_threshold.text()} "
         )
 
         dt = (
-            f"-dt {float(self.dist_threshold.text())} "
+            f"-dt {convert_to_float(self.dist_threshold.text())} "
             if not self.output_formats.endswith("None")
             else ""
         )

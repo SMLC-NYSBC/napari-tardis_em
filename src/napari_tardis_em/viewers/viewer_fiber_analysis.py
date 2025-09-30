@@ -36,15 +36,15 @@ from sklearn.neighbors import KDTree
 from superqt import QRangeSlider
 
 from napari_tardis_em.viewers.styles import border_style, CollapsibleBox
-from napari_tardis_em.viewers.utils import create_point_layer
-from tardis_em.analysis.mt_classification.utils import assign_filaments_to_n_poles
-from tardis_em.analysis.filament_utils import (
+from napari_tardis_em.viewers.utils import create_point_layer, convert_to_float
+from tardis_em_analysis.mt_classification.utils import assign_filaments_to_n_poles
+from tardis_em_analysis.filament_utils import (
     reorder_segments_id,
     sort_by_length,
     sort_segments,
     resample_filament,
 )
-from tardis_em.analysis.geometry_metrics import (
+from tardis_em_analysis.geometry_metrics import (
     length_list,
     curvature_list,
     tortuosity_list,
@@ -623,7 +623,7 @@ class TardisWidget(QWidget):
     def resample(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
 
-        # px = np.ceil(25 / float(self.pixel_size_bt.text()))
+        # px = np.ceil(25 / convert_to_float(self.pixel_size_bt.text()))
         # data = sort_segments(data)
         data = resample_filament(data, "auto")
 
@@ -658,7 +658,7 @@ class TardisWidget(QWidget):
             name="Centers",
             visibility=True,
             as_filament=False,
-            size_=100 / float(self.pixel_size_bt.text()),
+            size_=100 / convert_to_float(self.pixel_size_bt.text()),
         )
 
     def add_new_point(self):
@@ -695,13 +695,13 @@ class TardisWidget(QWidget):
             name=name,
             visibility=True,
             as_filament=False,
-            size_=100 / float(self.pixel_size_bt.text()),
+            size_=100 / convert_to_float(self.pixel_size_bt.text()),
         )
 
     def cluster_ends(self):
         th = self.cluster_ends_th.text()
         if th != "auto":
-            th = float(th)
+            th = convert_to_float(th)
 
         data, name, properties = self.get_selected_data(name=True, properties=True)
 
@@ -776,15 +776,17 @@ class TardisWidget(QWidget):
 
         layers = [layer.name for layer in self.viewer.layers]
         last_obj = self.last_selected_obj.text().split(";")
-        dist_th_min = float(self.cut_sphere_min.text())
-        dist_th_max = float(self.cut_sphere_max.text())
+        dist_th_min = convert_to_float(self.cut_sphere_min.text())
+        dist_th_max = convert_to_float(self.cut_sphere_max.text())
 
         if dist_th_max == 0.0:
             return
 
         layer = [n for n in layers if n.startswith(last_obj[0])]
         if len(layer) != 0:
-            filter_to = self.get_data_by_name(layer[0])[int(float(last_obj[1]))][1:]
+            filter_to = self.get_data_by_name(layer[0])[
+                int(convert_to_float(last_obj[1]))
+            ][1:]
 
             distances = np.linalg.norm(data[:, 1:] - filter_to, axis=1)
             mask = np.logical_and(dist_th_min <= distances, distances <= dist_th_max)
@@ -827,9 +829,9 @@ class TardisWidget(QWidget):
             _max = max(length)
 
             if sender in [self.filter_length_min_label, self.filter_length_max_label]:
-                filter_length_min, filter_length_max = float(
+                filter_length_min, filter_length_max = convert_to_float(
                     self.filter_length_min_label.text()
-                ), float(self.filter_length_max_label.text())
+                ), convert_to_float(self.filter_length_max_label.text())
                 filter_length_bool = np.logical_and(
                     filter_length_min <= length, length <= filter_length_max
                 )
@@ -851,10 +853,10 @@ class TardisWidget(QWidget):
                 filter_length_value_min = _min + (filter_length_min * (_max - _min))
                 filter_length_value_max = _min + (filter_length_max * (_max - _min))
                 self.filter_length_min_label.setText(
-                    f"{float(filter_length_value_min):.2f}"
+                    f"{convert_to_float(filter_length_value_min):.2f}"
                 )
                 self.filter_length_max_label.setText(
-                    f"{float(filter_length_value_max):.2f}"
+                    f"{convert_to_float(filter_length_value_max):.2f}"
                 )
 
                 filter_length_bool = np.logical_and(
@@ -871,9 +873,9 @@ class TardisWidget(QWidget):
             _max = max(curvature)
 
             if sender in [self.filter_curv_min_label, self.filter_curv_max_label]:
-                filter_curv_min, filter_curv_max = float(
+                filter_curv_min, filter_curv_max = convert_to_float(
                     self.filter_curv_min_label.text()
-                ), float(self.filter_curv_max_label.text())
+                ), convert_to_float(self.filter_curv_max_label.text())
                 filter_curve_bool = np.logical_and(
                     filter_curv_min <= curvature, curvature <= filter_curv_max
                 )
@@ -895,10 +897,10 @@ class TardisWidget(QWidget):
                 filter_curv_value_min = _min + (filter_curv_min * (_max - _min))
                 filter_curv_value_max = _min + (filter_curv_max * (_max - _min))
                 self.filter_curv_min_label.setText(
-                    f"{float(filter_curv_value_min):.4f}"
+                    f"{convert_to_float(filter_curv_value_min):.4f}"
                 )
                 self.filter_curv_max_label.setText(
-                    f"{float(filter_curv_value_max):.4f}"
+                    f"{convert_to_float(filter_curv_value_max):.4f}"
                 )
 
                 filter_curve_bool = np.logical_and(
@@ -915,9 +917,9 @@ class TardisWidget(QWidget):
             _max = max(tortuosity)
 
             if sender in [self.filter_tort_min_label, self.filter_tort_max_label]:
-                filter_tort_min, filter_tort_max = float(
+                filter_tort_min, filter_tort_max = convert_to_float(
                     self.filter_tort_min_label.text()
-                ), float(self.filter_tort_max_label.text())
+                ), convert_to_float(self.filter_tort_max_label.text())
                 filter_tort_bool = np.logical_and(
                     filter_tort_min <= tortuosity, tortuosity <= filter_tort_max
                 )
@@ -939,10 +941,10 @@ class TardisWidget(QWidget):
                 filter_tort_value_min = _min + (filter_tort_min * (_max - _min))
                 filter_tort_value_max = _min + (filter_tort_max * (_max - _min))
                 self.filter_tort_min_label.setText(
-                    f"{float(filter_tort_value_min):.2f}"
+                    f"{convert_to_float(filter_tort_value_min):.2f}"
                 )
                 self.filter_tort_max_label.setText(
-                    f"{float(filter_tort_value_max):.2f}"
+                    f"{convert_to_float(filter_tort_value_max):.2f}"
                 )
 
                 filter_tort_bool = np.logical_and(
@@ -962,9 +964,9 @@ class TardisWidget(QWidget):
                 self.filter_end_inter_dist_min_label,
                 self.filter_end_inter_dist_max_label,
             ]:
-                filter_dist_min, filter_dist_max = float(
+                filter_dist_min, filter_dist_max = convert_to_float(
                     self.filter_end_inter_dist_min_label.text()
-                ), float(self.filter_end_inter_dist_max_label.text())
+                ), convert_to_float(self.filter_end_inter_dist_max_label.text())
                 filter_end_dist_inter_bool = np.logical_and(
                     filter_dist_min <= end_inter_dist, end_inter_dist <= filter_dist_max
                 )
@@ -986,10 +988,10 @@ class TardisWidget(QWidget):
                 filter_dist_min_value = _min + (filter_dist_min * (_max - _min))
                 filter_dist_max_value = _min + (filter_dist_max * (_max - _min))
                 self.filter_end_inter_dist_min_label.setText(
-                    f"{float(filter_dist_min_value):.2f}"
+                    f"{convert_to_float(filter_dist_min_value):.2f}"
                 )
                 self.filter_end_inter_dist_max_label.setText(
-                    f"{float(filter_dist_max_value):.2f}"
+                    f"{convert_to_float(filter_dist_max_value):.2f}"
                 )
 
                 filter_end_dist_inter_bool = np.logical_and(
@@ -1009,9 +1011,9 @@ class TardisWidget(QWidget):
                 self.filter_end_inter_angle_min_label,
                 self.filter_end_inter_angle_max_label,
             ]:
-                filter_angle_min, filter_angle_max = float(
+                filter_angle_min, filter_angle_max = convert_to_float(
                     self.filter_end_inter_angle_min_label.text()
-                ), float(self.filter_end_inter_angle_max_label.text())
+                ), convert_to_float(self.filter_end_inter_angle_max_label.text())
                 filter_end_angle_inter_bool = np.logical_and(
                     filter_angle_min <= end_inter_angle,
                     end_inter_angle <= filter_angle_max,
@@ -1034,10 +1036,10 @@ class TardisWidget(QWidget):
                 filter_angle_min_value = _min + (filter_angle_min * (_max - _min))
                 filter_angle_max_value = _min + (filter_angle_max * (_max - _min))
                 self.filter_end_inter_angle_min_label.setText(
-                    f"{float(filter_angle_min_value):.2f}"
+                    f"{convert_to_float(filter_angle_min_value):.2f}"
                 )
                 self.filter_end_inter_angle_max_label.setText(
-                    f"{float(filter_angle_max_value):.2f}"
+                    f"{convert_to_float(filter_angle_max_value):.2f}"
                 )
 
                 filter_end_angle_inter_bool = np.logical_and(
@@ -1084,14 +1086,16 @@ class TardisWidget(QWidget):
 
         layers = [layer.name for layer in self.viewer.layers]
         last_obj = self.last_selected_obj.text().split(";")
-        dist_th = float(self.filter_to_selected_point_dist.text())
+        dist_th = convert_to_float(self.filter_to_selected_point_dist.text())
 
         if dist_th == 0.0:
             return
 
         layer = [n for n in layers if n.startswith(last_obj[0])]
         if len(layer) != 0:
-            filter_to = self.get_data_by_name(layer[0])[int(float(last_obj[1]))][1:]
+            filter_to = self.get_data_by_name(layer[0])[
+                int(convert_to_float(last_obj[1]))
+            ][1:]
 
             # Get tracks ends
             _, first_indices, count = np.unique(
@@ -1754,9 +1758,9 @@ def show_coordinate_dialog():
     if dialog.exec_():
         try:
             # Get and convert inputs to floats
-            z = float(z_input.text())
-            y = float(y_input.text())
-            x = float(x_input.text())
+            z = convert_to_float(z_input.text())
+            y = convert_to_float(y_input.text())
+            x = convert_to_float(x_input.text())
 
             return np.array([[0, x, y, z]])
         except ValueError:

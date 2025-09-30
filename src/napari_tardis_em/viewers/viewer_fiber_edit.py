@@ -32,9 +32,13 @@ from qtpy.QtWidgets import QWidget
 from napari_tardis_em.utils.utils import get_list_of_device
 from napari_tardis_em.viewers import IMG_FORMAT
 from napari_tardis_em.viewers.styles import border_style
-from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
-from tardis_em.analysis.analysis import analyse_filaments_list
-from tardis_em.analysis.filament_utils import (
+from napari_tardis_em.viewers.utils import (
+    create_image_layer,
+    create_point_layer,
+    convert_to_float,
+)
+from tardis_em_analysis.analysis import analyse_filaments_list
+from tardis_em_analysis.filament_utils import (
     reorder_segments_id,
     sort_segment,
     sort_by_length,
@@ -528,7 +532,7 @@ class TardisWidget(QWidget):
             output_format="tif_csv",
             patch_size=256 if workflow == "Microtubule_tirf" else 96,
             cnn_threshold=self.cnn_threshold.text(),
-            dist_threshold=float(self.dist_threshold.text()),
+            dist_threshold=convert_to_float(self.dist_threshold.text()),
             points_in_patch=900,
             predict_with_rotation=True,
             amira_prefix=None,
@@ -561,7 +565,7 @@ class TardisWidget(QWidget):
         if T == 1:
             T = None
 
-        pixel_size = float(self.pixel_size_bt.text())
+        pixel_size = convert_to_float(self.pixel_size_bt.text())
         if pixel_size == 1.0:
             pixel_size = None
         else:
@@ -842,7 +846,7 @@ class TardisWidget(QWidget):
     def norm_px(self):
         data, active_layer, type_layer = self.get_selected_data(name=True, type_=True)
 
-        data[:, 1:] = data[:, 1:] / float(self.pixel_size_bt.text())
+        data[:, 1:] = data[:, 1:] / convert_to_float(self.pixel_size_bt.text())
 
         create_point_layer(
             self.viewer,
@@ -855,7 +859,7 @@ class TardisWidget(QWidget):
     def resample(self):
         data, name, type_ = self.get_selected_data(name=True, type_=True)
 
-        px = np.ceil(25 / float(self.pixel_size_bt.text()))
+        px = np.ceil(25 / convert_to_float(self.pixel_size_bt.text()))
         data = sort_segments(data)
         data = resample_filament(data, px)
         create_point_layer(

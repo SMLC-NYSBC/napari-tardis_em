@@ -13,8 +13,12 @@ from os.path import join, dirname
 import numpy as np
 from napari.utils.notifications import show_error
 
-from napari_tardis_em.viewers.utils import create_image_layer, create_point_layer
-from tardis_em.analysis.filament_utils import sort_by_length
+from napari_tardis_em.viewers.utils import (
+    create_image_layer,
+    create_point_layer,
+    convert_to_float,
+)
+from tardis_em_analysis.filament_utils import sort_by_length
 from tardis_em.cnn.data_processing.trim import trim_with_stride
 from tardis_em.cnn.datasets.dataloader import PredictionDataset
 from tardis_em.utils.aws import get_all_version_aws
@@ -104,7 +108,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
     if model_params["correct_px"] == "None":
         model_params["correct_px"] = None
     else:
-        model_params["correct_px"] = float(model_params["correct_px"])
+        model_params["correct_px"] = convert_to_float(model_params["correct_px"])
 
     msg = (
         f"Predicted file is without pixel size metadate {model_params['correct_px']}."
@@ -117,7 +121,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
     if model_params["normalize_px"] == "None":
         model_params["normalize_px"] = None
     else:
-        model_params["normalize_px"] = float(model_params["normalize_px"])
+        model_params["normalize_px"] = convert_to_float(model_params["normalize_px"])
 
     output_formats = f"{output_semantic}_{output_instance}"
 
@@ -167,7 +171,7 @@ def semantic_preprocess(viewer, dir_, output_semantic, output_instance, model_pa
     if model_params["amira_inter_probability"] == "None":
         model_params["amira_inter_probability"] = None
     else:
-        model_params["amira_inter_probability"] = float(
+        model_params["amira_inter_probability"] = convert_to_float(
             model_params["amira_inter_probability"]
         )
 

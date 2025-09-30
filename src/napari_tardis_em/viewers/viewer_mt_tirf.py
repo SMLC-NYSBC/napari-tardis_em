@@ -309,7 +309,10 @@ class TardisWidget(QWidget):
     def update_cnn_threshold(self):
         if self.img is not None:
             self.img_threshold = _update_cnn_threshold(
-                self.viewer, self.dir, self.img, float(self.cnn_threshold.text())
+                self.viewer,
+                self.dir,
+                self.img,
+                convert_to_float(self.cnn_threshold.text()),
             )
 
             self.predictor.image = self.img_threshold
@@ -346,7 +349,7 @@ class TardisWidget(QWidget):
     def load_directory(self):
         filename, _ = QFileDialog.getOpenFileName(
             caption="Open File",
-            directory=getcwd(),
+            directory=self.out_,
             # filter="Image Files (*.mrc *.rec *.map, *.tif, *.tiff, *.am)",
         )
 
@@ -392,8 +395,8 @@ class TardisWidget(QWidget):
                 {
                     "correct_px": "None",
                     "normalize_px": "1.0",
-                    "cnn_threshold": float(self.cnn_threshold.text()),
-                    "dist_threshold": float(self.dist_threshold.text()),
+                    "cnn_threshold": convert_to_float(self.cnn_threshold.text()),
+                    "dist_threshold": convert_to_float(self.dist_threshold.text()),
                     "model_version": self.model_version.currentText(),
                     "predict_type": "Microtubule_tirf",
                     "mask": False,
@@ -538,12 +541,12 @@ class TardisWidget(QWidget):
 
         ct = (
             "-ct auto "
-            if float(self.cnn_threshold.text()) == 1.0
+            if convert_to_float(self.cnn_threshold.text()) == 1.0
             else f"-ct {self.cnn_threshold.text()} "
         )
 
         dt = (
-            f"-dt {float(self.dist_threshold.text())} "
+            f"-dt {convert_to_float(self.dist_threshold.text())} "
             if not self.output_formats.endswith("None")
             else ""
         )

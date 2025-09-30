@@ -41,6 +41,7 @@ from napari_tardis_em.viewers.styles import (
 from napari_tardis_em.viewers.utils import (
     setup_environment_and_dataset,
     create_image_layer,
+    convert_to_float,
 )
 from tardis_em.cnn.cnn import build_cnn_network
 from tardis_em.cnn.datasets.dataloader import CNNDataset
@@ -342,13 +343,13 @@ class TardisWidget(QWidget):
         if pixel_size == "None":
             pixel_size = None
         else:
-            pixel_size = float(pixel_size)
+            pixel_size = convert_to_float(pixel_size)
 
         correct_pixel_size = self.correct_pixel_size.text()
         if correct_pixel_size == "None":
             correct_pixel_size = None
         else:
-            correct_pixel_size = float(correct_pixel_size)
+            correct_pixel_size = convert_to_float(correct_pixel_size)
 
         setup_environment_and_dataset(
             self.dir,
@@ -388,7 +389,7 @@ class TardisWidget(QWidget):
         cnn_type = self.cnn_type.currentText()
         cnn_out_channel = int(self.cnn_out_channel.text())
         patch_size = int(self.patch_size.currentText())
-        dropout_rate = float(self.dropout_rate.text())
+        dropout_rate = convert_to_float(self.dropout_rate.text())
         cnn_layers = int(self.cnn_layers.text())
         cnn_scaler = int(self.cnn_scaler.currentText())
         conv_kernel = int(self.cnn_kernel.text())
@@ -474,7 +475,7 @@ class TardisWidget(QWidget):
 
         self.optimizer = optim.NAdam(
             params=self.model.parameters(),
-            lr=float(self.learning_rate.text()),
+            lr=convert_to_float(self.learning_rate.text()),
             betas=(0.9, 0.999),
             eps=1e-8,
             momentum_decay=4e-3,
@@ -744,7 +745,7 @@ class TardisWidget(QWidget):
         px = (
             ""
             if self.pixel_size.text() == "None"
-            else f"-px {float(self.pixel_size.text())} "
+            else f"-px {convert_to_float(self.pixel_size.text())} "
         )
 
         ms = (
@@ -822,8 +823,8 @@ class TardisWidget(QWidget):
 
         lr = (
             ""
-            if float(self.learning_rate.text()) == 0.0005
-            else f"-lr {float(self.learning_rate.text())} "
+            if convert_to_float(self.learning_rate.text()) == 0.0005
+            else f"-lr {convert_to_float(self.learning_rate.text())} "
         )
 
         e = "" if int(self.epoch.text()) == 10000 else f"-e {int(self.epoch.text())} "
@@ -836,7 +837,7 @@ class TardisWidget(QWidget):
 
         dp = (
             ""
-            if float(self.dropout_rate.text()) == 0.5
+            if convert_to_float(self.dropout_rate.text()) == 0.5
             else f"-dp {float(self.dropout_rate.text())} "
         )
 
