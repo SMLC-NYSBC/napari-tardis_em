@@ -684,10 +684,8 @@ class TardisWidget(QWidget):
             ids = 0
 
         if xyz.shape == (1, 4):
-            print(f"Data: {data} \n xyz: {xyz}")
             data = np.vstack([data, xyz])
             data[-1, 0] = ids
-            print(f"Stitched: {data}")
 
         create_point_layer(
             viewer=self.viewer,
@@ -1188,9 +1186,6 @@ class TardisWidget(QWidget):
         except KeyError:
             return
 
-        print(
-            self.hist_bins_bt.currentText(),
-        )
         self.plot_universal.show()
         self.plot_universal.update_hist(
             lengths,
