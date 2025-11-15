@@ -14,7 +14,7 @@ from os.path import join, splitext, isdir, isfile, dirname
 
 import numpy as np
 import pandas as pd
-from PyQt5.QtGui import QDoubleValidator, QIntValidator
+from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtWidgets import (
     QPushButton,
     QFormLayout,
@@ -96,7 +96,7 @@ class TardisWidget(QWidget):
         self.analyse_on_channel.setMaximum(10)
         self.analyse_on_channel.setSingleStep(1)
         self.analyse_on_channel.setValue(0)
-
+        self.analyse_on_channel.valueChanged.connect(self.view_channel)
         self.normalize_image = QCheckBox()
         self.normalize_image.setCheckState(0)
 
@@ -355,6 +355,11 @@ class TardisWidget(QWidget):
         if not isdir(join(self.dir, "Predictions", "Analysis")):
             mkdir(join(self.dir, "Predictions", "Analysis"))
 
+    def view_channel(self):
+        self.load_data()
+        self.select_view_data()
+        self.viewer.dims.current_step = (int(self.analyse_on_channel.text()), 0, 0, 0, 0)
+
     def load_data(self):
         image_list = listdir(self.dir)
         self.nd2_list = [i for i in image_list if i.endswith(".nd2")]
@@ -397,13 +402,14 @@ class TardisWidget(QWidget):
         self.view_selected_data()
 
     def view_selected_data(self):
+        frame_ = int(self.analyse_on_channel.value())
         if self.loading_data_list:
             return
 
         name_ = self.select_data_view.currentText()
         img = load_image(join(self.dir, name_), px=False)
         range_ = (
-            (np.min(img[0, 0, 0, ...]), np.max(img[0, 0, 0, ...]))
+            (np.min(img[frame_, 0, 0, ...]), np.max(img[frame_, 0, 0, ...]))
             if name_.endswith(".nd2")
             else (np.min(img.flatten()), np.max(img.flatten()))
         )
@@ -429,7 +435,7 @@ class TardisWidget(QWidget):
         mask, instance = None, None
         # Find files starting with name_ and ending with extension
         # if self.nd2_list load all files and place them in [C, F, T, Y, X] else load file
-        nd2_in = f"_0" if self.nd2_list is not None else ""
+        nd2_in = "_0" if self.nd2_list is not None else ""
         is_mask_tif = isfile(
             join(self.dir, "Predictions", splitext(name_)[0] + nd2_in + "_semantic.tif")
         )
@@ -646,7 +652,7 @@ class TardisWidget(QWidget):
             )
 
             csv_path = join(
-                self.dir, "Predictions", "Analysis", splitext(name_)[0] + f"_{frame_}"
+                self.dir, "Predictions", "Analysis", splitext(name_)[0] + f"_{frame_}.csv"
             )
             if frame_ == 0:
                 master_df = pd.read_csv(csv_path, sep=",", header=0)
