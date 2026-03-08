@@ -122,12 +122,7 @@ class TardisWidget(QWidget):
         self.thickness_bt1 = QComboBox()
         self.thickness_bt1.addItems(["1", "3", "5", "7", "9"])
         self.thickness_bt1.setCurrentIndex(1)
-
-        self.thickness_bt2 = QComboBox()
-        self.thickness_bt2.addItems(["1", "3", "5", "7", "9"])
-        self.thickness_bt2.setCurrentIndex(1)
         self.thickness_bt_box.addWidget(self.thickness_bt1)
-        self.thickness_bt_box.addWidget(self.thickness_bt2)
 
         ##############################
         # Setting user should change #
@@ -166,8 +161,16 @@ class TardisWidget(QWidget):
             "reduce recall."
         )
         self.dist_threshold.setMaximumWidth(25)
+
+        self.filter_by_length = QLineEdit("100")
+        self.filter_by_length.setValidator(QDoubleValidator(0, 10000, 1))
+        self.filter_by_length.setToolTip(
+            "Filter predicted filaments by length. \n"
+            "Only filaments longer than the set value will be saved in the output. \n"
+            "Set 0 to disable filtering."
+        )
         self.model_thresh_box.addWidget(self.cnn_threshold)
-        self.model_thresh_box.addWidget(self.dist_threshold)
+        self.model_thresh_box.addWidget(self.filter_by_length)
 
         self.device = QComboBox()
         self.device.addItems(get_list_of_device())
@@ -263,10 +266,12 @@ class TardisWidget(QWidget):
         self.viewer.bind_key("b", self.b_event, overwrite=True)
         self.viewer.bind_key("n", self.n_event, overwrite=True)
         self.viewer.bind_key("m", self.m_event, overwrite=True)
-
+    
         """
         Initialized UI
         """
+        self.update_frame_save = True
+
         layout = QFormLayout()
         layout.addRow("Select Directory", self.directory)
         layout.addRow("Segment on channel", self.analyse_on_channel)
@@ -278,7 +283,7 @@ class TardisWidget(QWidget):
 
         layout.addRow("---- Workflow ----", label_2)
         layout.addRow("Pixel size [nm]", self.pixel_size_bt)
-        layout.addRow("CNN/DIST threshold", self.model_thresh_box)
+        layout.addRow("CNN/Filter by Length", self.model_thresh_box)
         layout.addRow("Device", self.device)
 
         layout.addRow("---- Run Prediction -----", label_run)
@@ -593,12 +598,12 @@ class TardisWidget(QWidget):
             model_version=None,
             output_format="tif_csv",
             patch_size=256,
-            cnn_threshold=self.cnn_threshold.text(),
-            dist_threshold=convert_to_float(self.dist_threshold.text()),
+            cnn_threshold=convert_to_float(self.cnn_threshold.text()),
+            dist_threshold=0.5,
             points_in_patch=900,
             predict_with_rotation=True,
             amira_prefix=None,
-            filter_by_length=100,
+            filter_by_length=int(self.filter_by_length.text()),
             connect_splines=25,
             connect_cylinder=12,
             amira_compare_distance=None,
@@ -612,10 +617,9 @@ class TardisWidget(QWidget):
         self.view_selected_data()
 
     def re_analise_data_batch(self):
+        self.update_frame_save = False
+
         name_ = self.select_data_view.currentText()
-        data = self.get_selected_data()
-        data = sort_segments(data)
-        data = sort_by_length(reorder_segments_id(data))
 
         dim_ = int(self.analysis_ch.currentText())
         analysis_list = self.analysis_list.currentData()
@@ -631,6 +635,12 @@ class TardisWidget(QWidget):
             pixel_size = [pixel_size]
 
         for frame_ in range(img.shape[1]):
+            self.nd2_file_frame_bt.setCurrentText(str(frame_))
+
+            data = self.get_selected_data()
+            data = sort_segments(data)
+            data = sort_by_length(reorder_segments_id(data))
+
             analyse_filaments_list(
                 data=[data],
                 names_l=[splitext(name_)[0] + f"_{frame_}"],
@@ -646,7 +656,7 @@ class TardisWidget(QWidget):
                 px=pixel_size,
                 thicknesses=[
                     int(self.thickness_bt1.currentText()),
-                    int(self.thickness_bt2.currentText()),
+                    int(self.thickness_bt1.currentText()),
                 ],
                 anal_list=analysis_list,
             )
@@ -666,13 +676,13 @@ class TardisWidget(QWidget):
                 self.dir,
                 "Predictions",
                 "Analysis",
-                splitext(name_)[0] + f"_analyse_dim_{dim_}.csv",
+                splitext(name_)[0] + f"_analyse_batch_file.csv",
             ),
             header=True,
             index=False,
             sep=",",
         )
-
+        self.update_frame_save = True
         # Stitch results and remove .temps
 
     def re_analise_data(self):
@@ -709,7 +719,7 @@ class TardisWidget(QWidget):
             px=pixel_size,
             thicknesses=[
                 int(self.thickness_bt1.currentText()),
-                int(self.thickness_bt2.currentText()),
+                int(self.thickness_bt1.currentText()),
             ],
             anal_list=analysis_list,
         )
@@ -759,7 +769,7 @@ class TardisWidget(QWidget):
             anal_list=analysis_list,
             thicknesses=[
                 int(self.thickness_bt1.currentText()),
-                int(self.thickness_bt2.currentText()),
+                int(self.thickness_bt1.currentText()),
             ],
         )
 
@@ -776,10 +786,11 @@ class TardisWidget(QWidget):
     def nd2_file_frame_change(self):
         if not self.nd2_update:
             name_ = self.select_data_view.currentText()
-            try:
-                self.save_edited_instances()
-            except AttributeError:
-                pass
+            if self.update_frame_save:
+                try:
+                    self.save_edited_instances()
+                except AttributeError:
+                    pass
             self.nd2_current_frame = int(self.nd2_file_frame_bt.currentText())
 
             id_ = f"_{self.nd2_file_frame_bt.currentText()}"
